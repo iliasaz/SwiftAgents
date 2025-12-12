@@ -3,9 +3,14 @@
 //
 // Resilience patterns for robust agent execution.
 // Includes:
-// - Retry policies with exponential backoff
-// - Circuit breaker pattern
-// - Timeout handling
-// - Fallback strategies
-//
-// To be implemented in Phase 6: Resilience
+// - Retry policies with exponential backoff (see RetryPolicy.swift)
+// - Fallback chains for graceful degradation (see FallbackChain.swift)
+// - Circuit breaker pattern (to be implemented)
+// - Timeout handling (to be implemented)
+
+// Re-export key resilience types
+@_exported import struct Foundation.TimeInterval
+
+/// Re-export resilience types for convenient access
+public typealias Retry = RetryPolicy
+public typealias Fallback = FallbackChain

@@ -3,9 +3,591 @@
 //
 // ReAct (Reasoning + Acting) agent implementation.
 // Implements the ReAct paradigm for interleaved reasoning and action.
-// Features:
-// - Thought-Action-Observation loop
-// - Tool integration for action execution
-// - Configurable reasoning strategies
-//
-// To be implemented in Phase 2: Agent Implementations
+
+import Foundation
+
+// MARK: - ReActAgent
+
+/// A ReAct (Reasoning + Acting) agent that uses interleaved reasoning and action steps.
+///
+/// The ReAct paradigm follows a Thought-Action-Observation loop:
+/// 1. **Thought**: The agent reasons about the current state and what to do next.
+/// 2. **Action**: The agent decides to call a tool or provide a final answer.
+/// 3. **Observation**: The result of the tool call is observed and added to context.
+///
+/// This loop continues until the agent decides to provide a final answer or
+/// reaches the maximum iteration limit.
+///
+/// Example:
+/// ```swift
+/// let agent = ReActAgent(
+///     tools: [CalculatorTool(), DateTimeTool()],
+///     instructions: "You are a helpful assistant that can perform calculations."
+/// )
+///
+/// let result = try await agent.run("What's 15% of 200?")
+/// print(result.output)  // "30"
+/// ```
+public actor ReActAgent: Agent {
+    // MARK: - Agent Protocol Properties
+
+    public let tools: [any Tool]
+    public let instructions: String
+    public let configuration: AgentConfiguration
+    public nonisolated let memory: (any AgentMemory)?
+    public nonisolated let inferenceProvider: (any InferenceProvider)?
+
+    // MARK: - Internal State
+
+    private var currentTask: Task<Void, Never>?
+    private var isCancelled: Bool = false
+    private let toolRegistry: ToolRegistry
+
+    // MARK: - Initialization
+
+    /// Creates a new ReActAgent.
+    /// - Parameters:
+    ///   - tools: Tools available to the agent. Default: []
+    ///   - instructions: System instructions defining agent behavior. Default: ""
+    ///   - configuration: Agent configuration settings. Default: .default
+    ///   - memory: Optional memory system. Default: nil
+    ///   - inferenceProvider: Optional custom inference provider. Default: nil
+    public init(
+        tools: [any Tool] = [],
+        instructions: String = "",
+        configuration: AgentConfiguration = .default,
+        memory: (any AgentMemory)? = nil,
+        inferenceProvider: (any InferenceProvider)? = nil
+    ) {
+        self.tools = tools
+        self.instructions = instructions
+        self.configuration = configuration
+        self.memory = memory
+        self.inferenceProvider = inferenceProvider
+        self.toolRegistry = ToolRegistry(tools: tools)
+    }
+
+    // MARK: - Agent Protocol Methods
+
+    /// Executes the agent with the given input and returns a result.
+    /// - Parameter input: The user's input/query.
+    /// - Returns: The result of the agent's execution.
+    /// - Throws: `AgentError` if execution fails.
+    public func run(_ input: String) async throws -> AgentResult {
+        guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AgentError.invalidInput(reason: "Input cannot be empty")
+        }
+
+        isCancelled = false
+        let resultBuilder = AgentResult.Builder()
+        _ = resultBuilder.start()
+
+        // Store input in memory if available
+        if let mem = memory {
+            await mem.add(.user(input))
+        }
+
+        // Execute the ReAct loop
+        let output = try await executeReActLoop(
+            input: input,
+            resultBuilder: resultBuilder
+        )
+
+        _ = resultBuilder.setOutput(output)
+
+        // Store output in memory if available
+        if let mem = memory {
+            await mem.add(.assistant(output))
+        }
+
+        return resultBuilder.build()
+    }
+
+    /// Streams the agent's execution, yielding events as they occur.
+    /// - Parameter input: The user's input/query.
+    /// - Returns: An async stream of agent events.
+    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    // Emit started event
+                    continuation.yield(.started(input: input))
+
+                    // Run the agent
+                    let result = try await self.run(input)
+
+                    // Emit completed event
+                    continuation.yield(.completed(result: result))
+                    continuation.finish()
+                } catch let error as AgentError {
+                    continuation.yield(.failed(error: error))
+                    continuation.finish(throwing: error)
+                } catch {
+                    let agentError = AgentError.internalError(reason: error.localizedDescription)
+                    continuation.yield(.failed(error: agentError))
+                    continuation.finish(throwing: agentError)
+                }
+            }
+        }
+    }
+
+    /// Cancels any ongoing execution.
+    public func cancel() async {
+        isCancelled = true
+        currentTask?.cancel()
+        currentTask = nil
+    }
+
+    // MARK: - ReAct Loop Implementation
+
+    private func executeReActLoop(
+        input: String,
+        resultBuilder: AgentResult.Builder
+    ) async throws -> String {
+        var iteration = 0
+        var scratchpad = ""  // Accumulates Thought-Action-Observation history
+
+        while iteration < configuration.maxIterations {
+            // Check for cancellation
+            try Task.checkCancellation()
+            if isCancelled {
+                throw AgentError.cancelled
+            }
+
+            iteration += 1
+            _ = resultBuilder.incrementIteration()
+
+            // Step 1: Build prompt with current context
+            let prompt = buildPrompt(
+                input: input,
+                scratchpad: scratchpad,
+                iteration: iteration
+            )
+
+            // Step 2: Generate response from model
+            let response = try await generateResponse(prompt: prompt)
+
+            // Step 3: Parse the response
+            let parsed = parseResponse(response)
+
+            switch parsed {
+            case .finalAnswer(let answer):
+                // Agent has decided on a final answer
+                return answer
+
+            case .toolCall(let toolName, let arguments):
+                // Agent wants to call a tool
+                let toolCall = ToolCall(
+                    toolName: toolName,
+                    arguments: arguments
+                )
+                _ = resultBuilder.addToolCall(toolCall)
+
+                // Step 4: Execute the tool
+                let startTime = ContinuousClock.now
+                do {
+                    let toolResult = try await toolRegistry.execute(
+                        toolNamed: toolName,
+                        arguments: arguments
+                    )
+                    let duration = ContinuousClock.now - startTime
+
+                    let result = ToolResult.success(
+                        callId: toolCall.id,
+                        output: toolResult,
+                        duration: duration
+                    )
+                    _ = resultBuilder.addToolResult(result)
+
+                    // Add to scratchpad
+                    scratchpad += """
+
+                    Thought: I need to use the \(toolName) tool.
+                    Action: \(toolName)(\(formatArguments(arguments)))
+                    Observation: \(toolResult.description)
+                    """
+
+                } catch {
+                    let duration = ContinuousClock.now - startTime
+                    let errorMessage = (error as? AgentError)?.localizedDescription ?? error.localizedDescription
+
+                    let result = ToolResult.failure(
+                        callId: toolCall.id,
+                        error: errorMessage,
+                        duration: duration
+                    )
+                    _ = resultBuilder.addToolResult(result)
+
+                    // Add error to scratchpad
+                    scratchpad += """
+
+                    Thought: I need to use the \(toolName) tool.
+                    Action: \(toolName)(\(formatArguments(arguments)))
+                    Observation: Error - \(errorMessage)
+                    """
+
+                    if configuration.stopOnToolError {
+                        throw AgentError.toolExecutionFailed(
+                            toolName: toolName,
+                            underlyingError: errorMessage
+                        )
+                    }
+                }
+
+            case .thinking(let thought):
+                // Agent is just thinking, continue
+                scratchpad += "\nThought: \(thought)"
+
+            case .invalid(let raw):
+                // Couldn't parse response, treat as thinking
+                scratchpad += "\nThought: \(raw)"
+            }
+        }
+
+        // Exceeded max iterations
+        throw AgentError.maxIterationsExceeded(iterations: iteration)
+    }
+
+    // MARK: - Prompt Building
+
+    private func buildPrompt(
+        input: String,
+        scratchpad: String,
+        iteration: Int
+    ) -> String {
+        let toolDescriptions = buildToolDescriptions()
+
+        let basePrompt = """
+        \(instructions.isEmpty ? "You are a helpful AI assistant." : instructions)
+
+        You are a ReAct agent that solves problems by interleaving Thought, Action, and Observation steps.
+
+        \(toolDescriptions.isEmpty ? "No tools are available." : "Available Tools:\n\(toolDescriptions)")
+
+        Format your response EXACTLY as follows:
+        - To reason: Start with "Thought:" followed by your reasoning about what to do next.
+        - To use a tool: Write "Action: tool_name(arg1: value1, arg2: value2)"
+        - To give your final answer: Write "Final Answer:" followed by your complete response to the user.
+
+        Rules:
+        1. Always start with a Thought to reason about the problem.
+        2. After an Observation, decide if you need another Action or can give the Final Answer.
+        3. Only use tools that are available in the list above.
+        4. When you have enough information, provide the Final Answer.
+
+        User Query: \(input)
+        """
+
+        if scratchpad.isEmpty {
+            return basePrompt + "\n\nBegin with your first Thought:"
+        } else {
+            return basePrompt + "\n\nPrevious steps:" + scratchpad + "\n\nContinue with your next step:"
+        }
+    }
+
+    private func buildToolDescriptions() -> String {
+        var descriptions: [String] = []
+        for tool in tools {
+            let toolDesc = formatToolDescription(tool)
+            descriptions.append(toolDesc)
+        }
+        return descriptions.joined(separator: "\n\n")
+    }
+
+    private func formatToolDescription(_ tool: any Tool) -> String {
+        let params = formatParameterDescriptions(tool.parameters)
+        if params.isEmpty {
+            return "- \(tool.name): \(tool.description)"
+        } else {
+            return "- \(tool.name): \(tool.description)\n  Parameters:\n\(params)"
+        }
+    }
+
+    private func formatParameterDescriptions(_ parameters: [ToolParameter]) -> String {
+        var lines: [String] = []
+        for param in parameters {
+            let name = param.name
+            let desc = param.description
+            let required = param.isRequired
+            let reqStr = required ? "(required)" : "(optional)"
+            let line = "    - " + name + " " + reqStr + ": " + desc
+            lines.append(line)
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Response Generation
+
+    private func generateResponse(prompt: String) async throws -> String {
+        // Use custom inference provider if available
+        if let provider = inferenceProvider {
+            let options = InferenceOptions(
+                temperature: configuration.temperature,
+                maxTokens: configuration.maxTokens
+            )
+            return try await provider.generate(prompt: prompt, options: options)
+        }
+
+        // Foundation Models is not available in this context
+        // Throw an error indicating an inference provider is required
+        throw AgentError.inferenceProviderUnavailable(
+            reason: "No inference provider configured. Please provide an InferenceProvider."
+        )
+    }
+
+    // MARK: - Response Parsing
+
+    private enum ParsedResponse {
+        case finalAnswer(String)
+        case toolCall(name: String, arguments: [String: SendableValue])
+        case thinking(String)
+        case invalid(String)
+    }
+
+    private func parseResponse(_ response: String) -> ParsedResponse {
+        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Check for final answer
+        if let finalAnswerRange = trimmed.range(of: "Final Answer:", options: .caseInsensitive) {
+            let answer = String(trimmed[finalAnswerRange.upperBound...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return .finalAnswer(answer)
+        }
+
+        // Check for action/tool call
+        if let actionRange = trimmed.range(of: "Action:", options: .caseInsensitive) {
+            let actionPart = String(trimmed[actionRange.upperBound...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .components(separatedBy: "\n")
+                .first ?? ""
+
+            if let parsed = parseToolCall(actionPart) {
+                return .toolCall(name: parsed.name, arguments: parsed.arguments)
+            }
+        }
+
+        // Check for thought
+        if let thoughtRange = trimmed.range(of: "Thought:", options: .caseInsensitive) {
+            var thought = String(trimmed[thoughtRange.upperBound...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Stop at next section marker if present
+            if let nextMarker = thought.range(of: "Action:", options: .caseInsensitive) {
+                thought = String(thought[..<nextMarker.lowerBound])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if let nextMarker = thought.range(of: "Final Answer:", options: .caseInsensitive) {
+                thought = String(thought[..<nextMarker.lowerBound])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+
+            return .thinking(thought)
+        }
+
+        // Couldn't parse - treat as thinking
+        return .invalid(trimmed)
+    }
+
+    private func parseToolCall(_ text: String) -> (name: String, arguments: [String: SendableValue])? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Parse format: tool_name(arg1: value1, arg2: value2)
+        guard let parenStart = trimmed.firstIndex(of: "("),
+              let parenEnd = trimmed.lastIndex(of: ")") else {
+            // Try simple format: tool_name with no args
+            let name = trimmed.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty && !name.contains(" ") && !name.contains(":") {
+                return (name: name, arguments: [:])
+            }
+            return nil
+        }
+
+        let name = String(trimmed[..<parenStart]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+
+        let argsString = String(trimmed[trimmed.index(after: parenStart)..<parenEnd])
+
+        var arguments: [String: SendableValue] = [:]
+
+        // Parse arguments
+        let argPairs = splitArguments(argsString)
+        for pair in argPairs {
+            let parts = pair.components(separatedBy: ":")
+            guard parts.count >= 2 else { continue }
+
+            let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let valueStr = parts.dropFirst().joined(separator: ":").trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Parse value
+            let value = parseValue(valueStr)
+            arguments[key] = value
+        }
+
+        return (name: name, arguments: arguments)
+    }
+
+    /// Splits argument string by comma, respecting quotes and nested structures.
+    private func splitArguments(_ str: String) -> [String] {
+        var result: [String] = []
+        var current = ""
+        var depth = 0
+        var inQuote = false
+        var quoteChar: Character = "\""
+
+        for char in str {
+            if !inQuote && (char == "\"" || char == "'") {
+                inQuote = true
+                quoteChar = char
+                current.append(char)
+            } else if inQuote && char == quoteChar {
+                inQuote = false
+                current.append(char)
+            } else if !inQuote && (char == "(" || char == "[" || char == "{") {
+                depth += 1
+                current.append(char)
+            } else if !inQuote && (char == ")" || char == "]" || char == "}") {
+                depth -= 1
+                current.append(char)
+            } else if !inQuote && depth == 0 && char == "," {
+                result.append(current.trimmingCharacters(in: .whitespaces))
+                current = ""
+            } else {
+                current.append(char)
+            }
+        }
+
+        if !current.trimmingCharacters(in: .whitespaces).isEmpty {
+            result.append(current.trimmingCharacters(in: .whitespaces))
+        }
+
+        return result
+    }
+
+    private func parseValue(_ valueStr: String) -> SendableValue {
+        let trimmed = valueStr.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Null
+        if trimmed.lowercased() == "null" || trimmed.lowercased() == "nil" {
+            return .null
+        }
+
+        // Boolean
+        if trimmed.lowercased() == "true" { return .bool(true) }
+        if trimmed.lowercased() == "false" { return .bool(false) }
+
+        // Number
+        if let intValue = Int(trimmed) { return .int(intValue) }
+        if let doubleValue = Double(trimmed) { return .double(doubleValue) }
+
+        // String (remove quotes if present)
+        var str = trimmed
+        if (str.hasPrefix("\"") && str.hasSuffix("\"")) ||
+           (str.hasPrefix("'") && str.hasSuffix("'")) {
+            str = String(str.dropFirst().dropLast())
+        }
+        return .string(str)
+    }
+
+    private func formatArguments(_ arguments: [String: SendableValue]) -> String {
+        arguments.map { "\($0.key): \($0.value.description)" }.joined(separator: ", ")
+    }
+}
+
+// MARK: - ReActAgent Builder
+
+extension ReActAgent {
+    /// Builder for creating ReActAgent instances with a fluent API.
+    ///
+    /// Example:
+    /// ```swift
+    /// let agent = ReActAgent.Builder()
+    ///     .tools([CalculatorTool()])
+    ///     .instructions("You are a math assistant.")
+    ///     .configuration(.default.maxIterations(5))
+    ///     .build()
+    /// ```
+    public final class Builder: @unchecked Sendable {
+        private var tools: [any Tool] = []
+        private var instructions: String = ""
+        private var configuration: AgentConfiguration = .default
+        private var memory: (any AgentMemory)?
+        private var inferenceProvider: (any InferenceProvider)?
+
+        /// Creates a new builder.
+        public init() {}
+
+        /// Sets the tools.
+        /// - Parameter tools: The tools to use.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func tools(_ tools: [any Tool]) -> Builder {
+            self.tools = tools
+            return self
+        }
+
+        /// Adds a tool.
+        /// - Parameter tool: The tool to add.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func addTool(_ tool: any Tool) -> Builder {
+            self.tools.append(tool)
+            return self
+        }
+
+        /// Adds built-in tools.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func withBuiltInTools() -> Builder {
+            self.tools.append(contentsOf: BuiltInTools.all)
+            return self
+        }
+
+        /// Sets the instructions.
+        /// - Parameter instructions: The system instructions.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func instructions(_ instructions: String) -> Builder {
+            self.instructions = instructions
+            return self
+        }
+
+        /// Sets the configuration.
+        /// - Parameter configuration: The agent configuration.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func configuration(_ configuration: AgentConfiguration) -> Builder {
+            self.configuration = configuration
+            return self
+        }
+
+        /// Sets the memory system.
+        /// - Parameter memory: The memory to use.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func memory(_ memory: any AgentMemory) -> Builder {
+            self.memory = memory
+            return self
+        }
+
+        /// Sets the inference provider.
+        /// - Parameter provider: The provider to use.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func inferenceProvider(_ provider: any InferenceProvider) -> Builder {
+            self.inferenceProvider = provider
+            return self
+        }
+
+        /// Builds the agent.
+        /// - Returns: A new ReActAgent instance.
+        public func build() -> ReActAgent {
+            ReActAgent(
+                tools: tools,
+                instructions: instructions,
+                configuration: configuration,
+                memory: memory,
+                inferenceProvider: inferenceProvider
+            )
+        }
+    }
+}

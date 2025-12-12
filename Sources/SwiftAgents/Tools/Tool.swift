@@ -1,11 +1,306 @@
 // Tool.swift
 // SwiftAgents Framework
 //
-// Tool protocol and execution framework.
-// Defines:
-// - ToolProtocol with async execution
-// - ToolInput/ToolOutput types
-// - ToolRegistry for managing available tools
-// - @Tool macro for easy tool definition
-//
-// To be implemented in Phase 1: Core Architecture
+// Tool protocol and supporting types for agent tool execution.
+
+import Foundation
+
+// MARK: - Tool Protocol
+
+/// A tool that can be used by an agent to perform actions.
+///
+/// Tools encapsulate functionality that agents can invoke during execution.
+/// Each tool has a name, description, parameters, and an execute method.
+///
+/// Example:
+/// ```swift
+/// struct WeatherTool: Tool {
+///     let name = "weather"
+///     let description = "Gets the current weather for a location"
+///     let parameters: [ToolParameter] = [
+///         ToolParameter(name: "location", description: "City name", type: .string)
+///     ]
+///
+///     func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+///         guard let location = arguments["location"]?.stringValue else {
+///             throw AgentError.invalidToolArguments(toolName: name, reason: "Missing location")
+///         }
+///         return .string("72°F and sunny in \(location)")
+///     }
+/// }
+/// ```
+public protocol Tool: Sendable {
+    /// The unique name of the tool.
+    var name: String { get }
+
+    /// A description of what the tool does (used in prompts to help the model understand).
+    var description: String { get }
+
+    /// The parameters this tool accepts.
+    var parameters: [ToolParameter] { get }
+
+    /// Executes the tool with the given arguments.
+    /// - Parameter arguments: The arguments passed to the tool.
+    /// - Returns: The result of the tool execution.
+    /// - Throws: `AgentError.toolExecutionFailed` or `AgentError.invalidToolArguments` on failure.
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue
+}
+
+// MARK: - Tool Protocol Extensions
+
+extension Tool {
+    /// Creates a ToolDefinition from this tool.
+    public var definition: ToolDefinition {
+        ToolDefinition(from: self)
+    }
+
+    /// Validates that the given arguments match this tool's parameters.
+    /// - Parameter arguments: The arguments to validate.
+    /// - Throws: `AgentError.invalidToolArguments` if validation fails.
+    public func validateArguments(_ arguments: [String: SendableValue]) throws {
+        for param in parameters where param.isRequired {
+            guard arguments[param.name] != nil else {
+                throw AgentError.invalidToolArguments(
+                    toolName: name,
+                    reason: "Missing required parameter: \(param.name)"
+                )
+            }
+        }
+    }
+
+    /// Gets a required string argument or throws.
+    /// - Parameters:
+    ///   - key: The argument key.
+    ///   - arguments: The arguments dictionary.
+    /// - Returns: The string value.
+    /// - Throws: `AgentError.invalidToolArguments` if missing or wrong type.
+    public func requiredString(_ key: String, from arguments: [String: SendableValue]) throws -> String {
+        guard let value = arguments[key]?.stringValue else {
+            throw AgentError.invalidToolArguments(
+                toolName: name,
+                reason: "Missing or invalid string parameter: \(key)"
+            )
+        }
+        return value
+    }
+
+    /// Gets an optional string argument.
+    /// - Parameters:
+    ///   - key: The argument key.
+    ///   - arguments: The arguments dictionary.
+    ///   - defaultValue: The default value if not present.
+    /// - Returns: The string value or default.
+    public func optionalString(_ key: String, from arguments: [String: SendableValue], default defaultValue: String? = nil) -> String? {
+        arguments[key]?.stringValue ?? defaultValue
+    }
+}
+
+// MARK: - Tool Parameter
+
+/// Describes a parameter that a tool accepts.
+public struct ToolParameter: Sendable, Equatable {
+    /// The name of the parameter.
+    public let name: String
+
+    /// A description of the parameter.
+    public let description: String
+
+    /// The type of the parameter.
+    public let type: ParameterType
+
+    /// Whether this parameter is required.
+    public let isRequired: Bool
+
+    /// The default value for this parameter, if any.
+    public let defaultValue: SendableValue?
+
+    /// Creates a new tool parameter.
+    /// - Parameters:
+    ///   - name: The parameter name.
+    ///   - description: A description of the parameter.
+    ///   - type: The parameter type.
+    ///   - isRequired: Whether the parameter is required. Default: true
+    ///   - defaultValue: The default value. Default: nil
+    public init(
+        name: String,
+        description: String,
+        type: ParameterType,
+        isRequired: Bool = true,
+        defaultValue: SendableValue? = nil
+    ) {
+        self.name = name
+        self.description = description
+        self.type = type
+        self.isRequired = isRequired
+        self.defaultValue = defaultValue
+    }
+
+    /// The type of a tool parameter.
+    public indirect enum ParameterType: Sendable, Equatable, CustomStringConvertible {
+        case string
+        case int
+        case double
+        case bool
+        case array(elementType: ParameterType)
+        case object(properties: [ToolParameter])
+        case oneOf([String])
+        case any
+
+        public var description: String {
+            switch self {
+            case .string: return "string"
+            case .int: return "integer"
+            case .double: return "number"
+            case .bool: return "boolean"
+            case .array(let elementType): return "array<\(elementType)>"
+            case .object: return "object"
+            case .oneOf(let options): return "oneOf(\(options.joined(separator: "|")))"
+            case .any: return "any"
+            }
+        }
+    }
+}
+
+// MARK: - Tool Definition
+
+/// A definition of a tool that can be included in model prompts.
+///
+/// This is a serializable representation of a tool's interface without
+/// the actual execution logic.
+public struct ToolDefinition: Sendable, Equatable {
+    /// The name of the tool.
+    public let name: String
+
+    /// A description of what the tool does.
+    public let description: String
+
+    /// The parameters this tool accepts.
+    public let parameters: [ToolParameter]
+
+    /// Creates a new tool definition.
+    /// - Parameters:
+    ///   - name: The tool name.
+    ///   - description: The tool description.
+    ///   - parameters: The tool parameters.
+    public init(name: String, description: String, parameters: [ToolParameter]) {
+        self.name = name
+        self.description = description
+        self.parameters = parameters
+    }
+
+    /// Creates a ToolDefinition from a Tool.
+    /// - Parameter tool: The tool to create a definition from.
+    public init(from tool: any Tool) {
+        self.name = tool.name
+        self.description = tool.description
+        self.parameters = tool.parameters
+    }
+}
+
+// MARK: - Tool Registry
+
+/// A registry for managing available tools.
+///
+/// ToolRegistry provides thread-safe tool registration and lookup.
+/// Use it to manage the set of tools available to an agent.
+///
+/// Example:
+/// ```swift
+/// let registry = ToolRegistry(tools: [CalculatorTool(), DateTimeTool()])
+/// let result = try await registry.execute(toolNamed: "calculator", arguments: ["expression": "2+2"])
+/// ```
+public actor ToolRegistry {
+    private var tools: [String: any Tool] = [:]
+
+    /// Creates an empty tool registry.
+    public init() {}
+
+    /// Creates a tool registry with the given tools.
+    /// - Parameter tools: The initial tools to register.
+    public init(tools: [any Tool]) {
+        for tool in tools {
+            self.tools[tool.name] = tool
+        }
+    }
+
+    /// Registers a tool.
+    /// - Parameter tool: The tool to register.
+    public func register(_ tool: any Tool) {
+        tools[tool.name] = tool
+    }
+
+    /// Registers multiple tools.
+    /// - Parameter newTools: The tools to register.
+    public func register(_ newTools: [any Tool]) {
+        for tool in newTools {
+            tools[tool.name] = tool
+        }
+    }
+
+    /// Unregisters a tool by name.
+    /// - Parameter name: The name of the tool to unregister.
+    public func unregister(named name: String) {
+        tools.removeValue(forKey: name)
+    }
+
+    /// Gets a tool by name.
+    /// - Parameter name: The tool name.
+    /// - Returns: The tool, or nil if not found.
+    public func tool(named name: String) -> (any Tool)? {
+        tools[name]
+    }
+
+    /// Returns true if a tool with the given name is registered.
+    /// - Parameter name: The tool name.
+    /// - Returns: True if the tool exists.
+    public func contains(named name: String) -> Bool {
+        tools[name] != nil
+    }
+
+    /// Gets all registered tools.
+    public var allTools: [any Tool] {
+        Array(tools.values)
+    }
+
+    /// Gets all tool names.
+    public var toolNames: [String] {
+        Array(tools.keys)
+    }
+
+    /// Gets all tool definitions.
+    public var definitions: [ToolDefinition] {
+        tools.values.map { ToolDefinition(from: $0) }
+    }
+
+    /// The number of registered tools.
+    public var count: Int {
+        tools.count
+    }
+
+    /// Executes a tool by name with the given arguments.
+    /// - Parameters:
+    ///   - name: The name of the tool to execute.
+    ///   - arguments: The arguments to pass to the tool.
+    /// - Returns: The result of the tool execution.
+    /// - Throws: `AgentError.toolNotFound` if the tool doesn't exist,
+    ///           or `AgentError.toolExecutionFailed` if execution fails.
+    public func execute(
+        toolNamed name: String,
+        arguments: [String: SendableValue]
+    ) async throws -> SendableValue {
+        guard let tool = tools[name] else {
+            throw AgentError.toolNotFound(name: name)
+        }
+
+        do {
+            return try await tool.execute(arguments: arguments)
+        } catch let error as AgentError {
+            throw error
+        } catch {
+            throw AgentError.toolExecutionFailed(
+                toolName: name,
+                underlyingError: error.localizedDescription
+            )
+        }
+    }
+}

@@ -3,30 +3,34 @@
 [![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange.svg)](https://swift.org)
 [![Platforms](https://img.shields.io/badge/Platforms-iOS%2026%20|%20macOS%2026%20|%20watchOS%2026%20|%20tvOS%2026%20|%20visionOS%2026-blue.svg)](https://developer.apple.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Swift Package Manager](https://img.shields.io/badge/SPM-compatible-brightgreen.svg)](https://swift.org/package-manager/)
 
-**LangChain for Apple Platforms** — A comprehensive Swift framework for building AI agents with Apple's Foundation Models.
+**LangChain for Apple Platforms** — A comprehensive Swift framework for building autonomous AI agents with Apple's Foundation Models.
 
-SwiftAgents provides the agent orchestration layer for autonomous reasoning, memory systems, and multi-agent coordination, designed specifically for Apple's ecosystem.
+SwiftAgents provides the agent orchestration layer on top of SwiftAI SDK and Foundation Models, enabling autonomous reasoning, intelligent tool use, persistent memory systems, and sophisticated multi-agent coordination—all built natively for Apple platforms with Swift 6.2's strict concurrency safety.
 
 ---
 
 ## Features
 
-- 🤖 **Agent Framework** - ReAct, Plan-and-Execute, and custom agent patterns
-- 🧠 **Memory Systems** - Conversation, vector, and summary memory
-- 🛠️ **Tool Integration** - Extensible tool protocol with `@Tool` macro
-- 🎭 **Multi-Agent Orchestration** - Supervisor-worker and collaborative patterns
-- 📊 **Observability** - Built-in tracing, metrics, and debugging
-- 🔄 **Resilience** - Retry policies, circuit breakers, and fallbacks
-- 🎨 **SwiftUI Components** - Ready-to-use chat and status views
+- 🤖 **Agent Framework** - ReAct pattern with Thought-Action-Observation loops for autonomous reasoning
+- 🧠 **Memory Systems** - Conversation, sliding window, summary, hybrid, and SwiftData-backed persistence
+- 🛠️ **Tool Integration** - Type-safe tool protocol with fluent builder API and built-in utilities
+- 🎭 **Multi-Agent Orchestration** - Supervisor-worker patterns, sequential chains, parallel execution, and intelligent routing
+- 📊 **Observability** - Built-in tracing (Console, OSLog), metrics collection, and event streaming
+- 🔄 **Resilience** - Circuit breakers, retry policies with exponential backoff, and fallback chains
+- 🎨 **SwiftUI Components** - Ready-to-use chat views and agent status indicators
+- ⚡️ **Swift 6.2 Native** - Full actor isolation, Sendable types, and structured concurrency throughout
+- 🍎 **Apple-First** - Designed for Foundation Models, optimized for Apple silicon
 
 ---
 
 ## Requirements
 
-- iOS 26.0+ / macOS 26.0+ / watchOS 26.0+ / tvOS 26.0+ / visionOS 26.0+
-- Swift 6.2+
-- Xcode 26.0+
+- **iOS 26.0+** / **macOS 26.0+** / **watchOS 26.0+** / **tvOS 26.0+** / **visionOS 26.0+**
+- **Swift 6.2+**
+- **Xcode 26.0+**
+- **Foundation Models** or compatible **InferenceProvider** implementation
 
 ---
 
@@ -48,11 +52,17 @@ Then add the dependency to your target:
 .target(
     name: "YourApp",
     dependencies: [
-        "SwiftAgents",
-        "SwiftAgentsUI"  // Optional: for SwiftUI components
+        .product(name: "SwiftAgents", package: "SwiftAgents"),
+        .product(name: "SwiftAgentsUI", package: "SwiftAgents")  // Optional: SwiftUI components
     ]
 )
 ```
+
+### Xcode Project
+
+1. File > Add Package Dependencies
+2. Enter repository URL: `https://github.com/chriskarani/SwiftAgents.git`
+3. Select version and add to your target
 
 ---
 
@@ -60,50 +70,353 @@ Then add the dependency to your target:
 
 ### Basic Agent
 
+Create a simple agent with tool calling capabilities:
+
 ```swift
 import SwiftAgents
 
-// Create a simple agent
-let agent = ReActAgent(
-    model: FoundationModel.default,
-    tools: [SearchTool(), CalculatorTool()]
-)
+// Create an inference provider (Foundation Models, SwiftAI SDK, etc.)
+let provider = MyInferenceProvider()
 
-// Run the agent
-let response = try await agent.execute("What is 25 * 4?")
-print(response.content)
+// Build an agent with tools
+let agent = ReActAgent.Builder()
+    .inferenceProvider(provider)
+    .instructions("You are a helpful assistant that can perform calculations.")
+    .withBuiltInTools()  // Adds DateTime and other built-in tools
+    .addTool(CalculatorTool())
+    .configuration(.default.maxIterations(5))
+    .build()
+
+// Execute the agent
+let result = try await agent.run("What is 25% of 200?")
+print(result.output)  // "50"
+print("Executed in \(result.duration)")
+print("Tool calls: \(result.toolCalls.count)")
 ```
 
-### With Memory
+### Agent with Memory
+
+Maintain conversation context across multiple interactions:
 
 ```swift
 import SwiftAgents
 
-// Create agent with conversation memory
+// Create a conversation memory with token limit
 let memory = ConversationMemory(maxTokens: 4000)
-let agent = ReActAgent(
-    model: FoundationModel.default,
-    memory: memory
+
+let agent = ReActAgent.Builder()
+    .inferenceProvider(provider)
+    .memory(memory)
+    .instructions("You are a friendly assistant with memory of our conversation.")
+    .build()
+
+// First message
+let response1 = try await agent.run("My name is Alice and I love Swift programming.")
+print(response1.output)  // "Nice to meet you, Alice! Swift is a great language..."
+
+// Second message - agent remembers context
+let response2 = try await agent.run("What's my name and what do I love?")
+print(response2.output)  // "Your name is Alice and you love Swift programming."
+
+// Check memory contents
+let messages = await memory.getAllMessages()
+print("Stored messages: \(messages.count)")
+```
+
+### Streaming Responses
+
+Stream agent execution in real-time:
+
+```swift
+import SwiftAgents
+
+let agent = ReActAgent.Builder()
+    .inferenceProvider(provider)
+    .build()
+
+for try await event in agent.stream("Explain quantum computing") {
+    switch event {
+    case .started(let input):
+        print("Started: \(input)")
+
+    case .thinking(let thought):
+        print("Thinking: \(thought)")
+
+    case .toolCalling(let toolCall):
+        print("Calling tool: \(toolCall.toolName)")
+
+    case .toolResult(let result):
+        print("Tool result: \(result)")
+
+    case .chunk(let text):
+        print(text, terminator: "")
+
+    case .completed(let result):
+        print("\n\nCompleted in \(result.duration)")
+
+    case .failed(let error):
+        print("Error: \(error)")
+    }
+}
+```
+
+### Multi-Agent Orchestration
+
+Route requests to specialized agents:
+
+```swift
+import SwiftAgents
+
+// Create specialized agents
+let mathAgent = ReActAgent.Builder()
+    .addTool(CalculatorTool())
+    .instructions("You are a math specialist.")
+    .build()
+
+let weatherAgent = ReActAgent.Builder()
+    .addTool(WeatherTool())
+    .instructions("You are a weather information specialist.")
+    .build()
+
+// Create agent descriptions for routing
+let mathDescription = AgentDescription(
+    name: "math_agent",
+    description: "Performs mathematical calculations and solves equations",
+    capabilities: ["arithmetic", "algebra", "calculus"],
+    keywords: ["calculate", "math", "compute", "solve", "equation"]
 )
 
-// Conversation maintains context
-let response1 = try await agent.execute("My name is Alice")
-let response2 = try await agent.execute("What's my name?")
-// Agent remembers: "Your name is Alice"
+let weatherDescription = AgentDescription(
+    name: "weather_agent",
+    description: "Provides weather information and forecasts",
+    capabilities: ["current weather", "forecasts", "temperature"],
+    keywords: ["weather", "temperature", "forecast", "rain", "sunny"]
+)
+
+// Create supervisor with LLM-based routing
+let supervisor = SupervisorAgent(
+    agents: [
+        (name: "math_agent", agent: mathAgent, description: mathDescription),
+        (name: "weather_agent", agent: weatherAgent, description: weatherDescription)
+    ],
+    routingStrategy: LLMRoutingStrategy(inferenceProvider: provider),
+    fallbackAgent: nil  // Optional general-purpose fallback
+)
+
+// Supervisor routes to appropriate agent
+let result1 = try await supervisor.run("What's 15 times 23?")
+// Routes to math_agent
+
+let result2 = try await supervisor.run("What's the weather in San Francisco?")
+// Routes to weather_agent
+
+// Check routing metadata
+if let selectedAgent = result1.metadata["selected_agent"]?.stringValue,
+   let confidence = result1.metadata["routing_confidence"]?.doubleValue {
+    print("Routed to: \(selectedAgent) (confidence: \(confidence))")
+}
+```
+
+### Custom Tools
+
+Create your own tools for agent capabilities:
+
+```swift
+import SwiftAgents
+
+struct SearchTool: Tool {
+    let name = "web_search"
+    let description = "Searches the web for information"
+    let parameters: [ToolParameter] = [
+        ToolParameter(
+            name: "query",
+            description: "The search query",
+            type: .string,
+            isRequired: true
+        ),
+        ToolParameter(
+            name: "max_results",
+            description: "Maximum number of results to return",
+            type: .int,
+            isRequired: false,
+            defaultValue: .int(5)
+        )
+    ]
+
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        let query = try requiredString("query", from: arguments)
+        let maxResults = arguments["max_results"]?.intValue ?? 5
+
+        // Perform search (implementation details omitted)
+        let results = try await performWebSearch(query: query, limit: maxResults)
+
+        return .array(results.map { .string($0) })
+    }
+
+    private func performWebSearch(query: String, limit: Int) async throws -> [String] {
+        // Your search implementation here
+        return []
+    }
+}
+
+// Use the custom tool
+let agent = ReActAgent.Builder()
+    .inferenceProvider(provider)
+    .addTool(SearchTool())
+    .build()
+
+let result = try await agent.run("Search for latest Swift news")
+```
+
+### Advanced Memory Systems
+
+Combine multiple memory strategies:
+
+```swift
+import SwiftAgents
+
+// Sliding window: Keep last N messages
+let slidingMemory = SlidingWindowMemory(windowSize: 10)
+
+// Summary memory: Automatically summarize old conversations
+let summaryMemory = SummaryMemory(
+    maxTokens: 4000,
+    summaryThreshold: 3000,
+    summarizer: MySummarizer()  // Implement Summarizer protocol
+)
+
+// Hybrid memory: Short-term conversation + long-term summaries
+let hybridMemory = HybridMemory(
+    conversationMemory: ConversationMemory(maxTokens: 2000),
+    summaryMemory: summaryMemory
+)
+
+// SwiftData-backed persistence
+let swiftDataMemory = SwiftDataMemory(
+    modelContainer: myModelContainer,
+    conversationId: "user_123"
+)
+
+let agent = ReActAgent.Builder()
+    .inferenceProvider(provider)
+    .memory(hybridMemory)
+    .build()
 ```
 
 ### SwiftUI Integration
 
+Build chat interfaces with included UI components:
+
 ```swift
 import SwiftUI
+import SwiftAgents
 import SwiftAgentsUI
 
 struct ChatView: View {
-    @State private var agent = ReActAgent.default
+    @State private var agent: ReActAgent
+    @State private var messages: [ChatMessage] = []
+    @State private var inputText = ""
+    @State private var isProcessing = false
+
+    init() {
+        let provider = MyInferenceProvider()
+        _agent = State(initialValue: ReActAgent.Builder()
+            .inferenceProvider(provider)
+            .memory(ConversationMemory(maxTokens: 4000))
+            .withBuiltInTools()
+            .build()
+        )
+    }
 
     var body: some View {
-        AgentChatView(agent: agent)
-            .navigationTitle("AI Assistant")
+        VStack {
+            // Message list
+            ScrollView {
+                ForEach(messages) { message in
+                    MessageRow(message: message)
+                }
+            }
+
+            // Input field
+            HStack {
+                TextField("Ask me anything...", text: $inputText)
+                    .textFieldStyle(.roundedBorder)
+
+                Button("Send") {
+                    sendMessage()
+                }
+                .disabled(inputText.isEmpty || isProcessing)
+            }
+            .padding()
+        }
+        .navigationTitle("AI Assistant")
+    }
+
+    private func sendMessage() {
+        let userMessage = ChatMessage(role: .user, content: inputText)
+        messages.append(userMessage)
+
+        let prompt = inputText
+        inputText = ""
+        isProcessing = true
+
+        Task {
+            do {
+                var assistantMessage = ChatMessage(role: .assistant, content: "")
+                messages.append(assistantMessage)
+                let messageIndex = messages.count - 1
+
+                // Stream response
+                for try await event in agent.stream(prompt) {
+                    switch event {
+                    case .chunk(let text):
+                        messages[messageIndex].content += text
+                    case .completed:
+                        isProcessing = false
+                    case .failed(let error):
+                        messages[messageIndex].content = "Error: \(error.localizedDescription)"
+                        isProcessing = false
+                    default:
+                        break
+                    }
+                }
+            } catch {
+                isProcessing = false
+            }
+        }
+    }
+}
+
+struct ChatMessage: Identifiable {
+    let id = UUID()
+    let role: Role
+    var content: String
+
+    enum Role {
+        case user, assistant
+    }
+}
+
+struct MessageRow: View {
+    let message: ChatMessage
+
+    var body: some View {
+        HStack {
+            if message.role == .user {
+                Spacer()
+            }
+
+            Text(message.content)
+                .padding()
+                .background(message.role == .user ? Color.blue : Color.gray.opacity(0.2))
+                .foregroundColor(message.role == .user ? .white : .primary)
+                .cornerRadius(12)
+
+            if message.role == .assistant {
+                Spacer()
+            }
+        }
+        .padding(.horizontal)
     }
 }
 ```
@@ -113,54 +426,657 @@ struct ChatView: View {
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Your Application                      │
-├─────────────────────────────────────────────────────────┤
-│                     SwiftAgentsUI                        │
-│              (ChatView, StatusView, etc.)                │
-├─────────────────────────────────────────────────────────┤
-│                      SwiftAgents                         │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐    │
-│  │ Agents  │  │ Memory  │  │  Tools  │  │  Orch.  │    │
-│  └─────────┘  └─────────┘  └─────────┘  └─────────┘    │
-├─────────────────────────────────────────────────────────┤
-│              Foundation Models / SwiftAI SDK             │
-│                   (Inference Layer)                      │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        Your Application                         │
+│                  (iOS, macOS, watchOS, tvOS, visionOS)          │
+├─────────────────────────────────────────────────────────────────┤
+│                         SwiftAgentsUI                           │
+│                  (Chat Views, Status Indicators)                │
+├─────────────────────────────────────────────────────────────────┤
+│                          SwiftAgents                            │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
+│  │   Agents     │  │    Memory    │  │    Tools     │          │
+│  │              │  │              │  │              │          │
+│  │ • ReAct      │  │ • Conversation│ │ • Protocol   │          │
+│  │ • Supervisor │  │ • Sliding    │  │ • Registry   │          │
+│  │ • Custom     │  │ • Summary    │  │ • Built-ins  │          │
+│  └──────────────┘  └──────────────┘  └──────────────┘          │
+│                                                                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
+│  │Orchestration │  │ Observability│  │  Resilience  │          │
+│  │              │  │              │  │              │          │
+│  │ • Sequential │  │ • Tracing    │  │ • Circuit    │          │
+│  │ • Parallel   │  │ • Metrics    │  │   Breakers   │          │
+│  │ • Handoff    │  │ • OSLog      │  │ • Retry      │          │
+│  └──────────────┘  └──────────────┘  └──────────────┘          │
+├─────────────────────────────────────────────────────────────────┤
+│              InferenceProvider Protocol (Abstract)              │
+│                  (Foundation Models / SwiftAI SDK)              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Layer Responsibilities
+
+- **Application Layer**: Your iOS/macOS/etc. app using SwiftAgents
+- **SwiftAgentsUI**: Pre-built SwiftUI components for common agent UIs
+- **SwiftAgents Core**: Agent implementations, memory, tools, orchestration
+- **InferenceProvider**: Abstraction for LLM backends (implement for your model)
+
+---
+
+## Core Components
+
+### 1. Agents
+
+The `Agent` protocol defines the core contract for autonomous agents:
+
+```swift
+public protocol Agent: Sendable {
+    var tools: [any Tool] { get }
+    var instructions: String { get }
+    var configuration: AgentConfiguration { get }
+    var memory: (any AgentMemory)? { get }
+    var inferenceProvider: (any InferenceProvider)? { get }
+
+    func run(_ input: String) async throws -> AgentResult
+    func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error>
+    func cancel() async
+}
+```
+
+**Built-in Implementations:**
+
+- **ReActAgent**: Implements Thought-Action-Observation reasoning loop
+  - Iteratively reasons about problems
+  - Decides when to use tools vs. provide final answer
+  - Parses natural language tool calls
+  - Configurable max iterations and error handling
+
+**Agent Configuration:**
+
+```swift
+let config = AgentConfiguration.default
+    .maxIterations(10)
+    .temperature(0.7)
+    .maxTokens(2000)
+    .stopOnToolError(false)
+```
+
+**Agent Results:**
+
+```swift
+struct AgentResult {
+    let output: String              // Final answer
+    let toolCalls: [ToolCall]       // Tools invoked
+    let toolResults: [ToolResult]   // Tool outputs
+    let metadata: [String: SendableValue]
+    let duration: Duration          // Execution time
+    let iterations: Int             // Number of reasoning loops
+}
+```
+
+**Agent Events (Streaming):**
+
+```swift
+enum AgentEvent {
+    case started(input: String)
+    case thinking(thought: String)
+    case toolCalling(toolCall: ToolCall)
+    case toolResult(result: ToolResult)
+    case chunk(text: String)
+    case completed(result: AgentResult)
+    case failed(error: AgentError)
+}
+```
+
+### 2. Memory Systems
+
+All memory implementations conform to the `AgentMemory` protocol (actor-based for thread safety):
+
+```swift
+public protocol AgentMemory: Actor, Sendable {
+    func add(_ message: MemoryMessage) async
+    func getContext(for query: String, tokenLimit: Int) async -> String
+    func getAllMessages() async -> [MemoryMessage]
+    func clear() async
+    var count: Int { get async }
+}
+```
+
+**Available Memory Systems:**
+
+| Memory Type | Description | Use Case |
+|-------------|-------------|----------|
+| `ConversationMemory` | Simple FIFO with token limit | Basic chat applications |
+| `SlidingWindowMemory` | Fixed-size window (last N messages) | Bounded memory requirements |
+| `SummaryMemory` | Automatic summarization of old messages | Long conversations |
+| `HybridMemory` | Combines conversation + summary | Best of both: recency + history |
+| `SwiftDataMemory` | SwiftData-backed persistence | Cross-session persistence |
+
+**Message Types:**
+
+```swift
+enum MemoryMessage {
+    case user(String)
+    case assistant(String)
+    case system(String)
+    case tool(name: String, result: String)
+}
+```
+
+### 3. Tools
+
+Tools give agents capabilities beyond text generation:
+
+```swift
+public protocol Tool: Sendable {
+    var name: String { get }
+    var description: String { get }
+    var parameters: [ToolParameter] { get }
+
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue
+}
+```
+
+**Parameter Types:**
+
+```swift
+enum ParameterType {
+    case string
+    case int
+    case double
+    case bool
+    case array(elementType: ParameterType)
+    case object(properties: [ToolParameter])
+    case oneOf([String])
+    case any
+}
+```
+
+**Built-in Tools:**
+
+- `DateTimeTool`: Current date/time information
+- More built-in tools coming in future releases
+
+**Tool Registry:**
+
+```swift
+let registry = ToolRegistry(tools: [tool1, tool2])
+await registry.register(tool3)
+
+let result = try await registry.execute(
+    toolNamed: "calculator",
+    arguments: ["expression": .string("2+2")]
+)
+```
+
+### 4. Multi-Agent Orchestration
+
+Coordinate multiple agents for complex workflows:
+
+**SupervisorAgent (Intelligent Routing):**
+
+```swift
+let supervisor = SupervisorAgent(
+    agents: [
+        (name: "agent1", agent: agent1, description: desc1),
+        (name: "agent2", agent: agent2, description: desc2)
+    ],
+    routingStrategy: LLMRoutingStrategy(inferenceProvider: provider)
+)
+```
+
+**Routing Strategies:**
+
+- `LLMRoutingStrategy`: Uses LLM to analyze input and select best agent
+- `KeywordRoutingStrategy`: Fast keyword-based matching (no LLM required)
+
+**SequentialChain (Pipeline):**
+
+```swift
+let chain = SequentialChain(agents: [
+    researchAgent,    // Gathers information
+    analysisAgent,    // Analyzes findings
+    summaryAgent      // Creates final report
+])
+
+let result = try await chain.run("Research Swift concurrency")
+```
+
+**ParallelGroup (Concurrent Execution):**
+
+```swift
+let group = ParallelGroup(agents: [
+    weatherAgent,
+    newsAgent,
+    stockAgent
+])
+
+let results = try await group.run("Get me updates")
+// All agents execute concurrently
+```
+
+**AgentContext (Shared State):**
+
+```swift
+let context = AgentContext(input: "User query")
+await context.set(key: "location", value: .string("San Francisco"))
+
+// Agents can access and modify shared context
+let location = await context.get(key: "location")
+```
+
+### 5. Observability
+
+Monitor agent execution with built-in tracing:
+
+```swift
+// Console tracing
+let consoleTracer = ConsoleTracer(minLevel: .info)
+agent.configuration.tracer = consoleTracer
+
+// OSLog integration
+let osLogTracer = OSLogTracer(subsystem: "com.myapp", category: "agents")
+agent.configuration.tracer = osLogTracer
+
+// Composite (multiple outputs)
+let compositeTracer = CompositeTracer(tracers: [consoleTracer, osLogTracer])
+
+// Buffered (batched for performance)
+let bufferedTracer = BufferedTracer(
+    wrapping: consoleTracer,
+    bufferSize: 100
+)
+
+// Metrics collection
+let metrics = MetricsCollector()
+agent.configuration.metricsCollector = metrics
+
+await metrics.recordExecution(
+    agentName: "my_agent",
+    duration: result.duration,
+    success: true
+)
+
+let stats = await metrics.getStats(for: "my_agent")
+print("Average duration: \(stats.averageDuration)")
+print("Success rate: \(stats.successRate)")
+```
+
+**Trace Events:**
+
+```swift
+enum TraceEvent {
+    case trace(message: String)
+    case debug(message: String)
+    case info(message: String)
+    case warning(message: String)
+    case error(message: String, error: Error?)
+}
+```
+
+### 6. Resilience
+
+Build robust agents with failure handling:
+
+**Circuit Breaker:**
+
+```swift
+let breaker = CircuitBreaker(
+    name: "llm_service",
+    failureThreshold: 5,
+    timeout: .seconds(30),
+    resetTimeout: .seconds(60)
+)
+
+let result = try await breaker.execute {
+    try await agent.run(input)
+}
+
+// Check state
+let state = await breaker.state
+switch state {
+case .closed: print("Operating normally")
+case .open: print("Circuit is open, failing fast")
+case .halfOpen: print("Testing if service recovered")
+}
+```
+
+**Retry Policy:**
+
+```swift
+let policy = RetryPolicy(
+    maxAttempts: 3,
+    initialDelay: .milliseconds(100),
+    maxDelay: .seconds(5),
+    backoffMultiplier: 2.0
+)
+
+let result = try await policy.execute {
+    try await agent.run(input)
+}
+```
+
+**Fallback Chain:**
+
+```swift
+let fallback = FallbackChain(
+    primary: primaryAgent,
+    fallbacks: [backupAgent1, backupAgent2, simpleAgent]
+)
+
+let result = try await fallback.run(input)
+// Tries agents in order until one succeeds
 ```
 
 ---
 
-## Documentation
+## API Design Principles
 
-- [Getting Started Guide](docs/getting-started.md)
-- [Agent Patterns](docs/agent-patterns.md)
-- [Memory Systems](docs/memory-systems.md)
-- [Tool Development](docs/tool-development.md)
-- [Multi-Agent Orchestration](docs/orchestration.md)
-- [API Reference](docs/api-reference.md)
+SwiftAgents follows these design principles:
+
+1. **Protocol-First**: Behavior contracts defined before implementations
+2. **Actor Safety**: All mutable state protected by actors (Swift 6.2 strict concurrency)
+3. **Sendable Types**: All public types are `Sendable` for safe concurrent access
+4. **Fluent Builders**: Chainable configuration with `@discardableResult`
+5. **Progressive Disclosure**: Simple defaults, advanced options available
+6. **Value Semantics**: Prefer `struct` over `class` where possible
+7. **Async/Await**: Structured concurrency throughout, no callbacks
+8. **Type Safety**: Strong typing with `SendableValue` for dynamic values
+
+---
+
+## Testing
+
+### Foundation Models Limitation
+
+Foundation Models are unavailable in iOS/macOS simulators. For testing, use mock implementations:
+
+```swift
+import SwiftAgents
+
+struct MockInferenceProvider: InferenceProvider {
+    func generate(prompt: String, options: InferenceOptions) async throws -> String {
+        return "Mock response for: \(prompt)"
+    }
+
+    func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield("Mock ")
+            continuation.yield("streaming ")
+            continuation.yield("response")
+            continuation.finish()
+        }
+    }
+
+    func generateWithToolCalls(
+        prompt: String,
+        tools: [ToolDefinition],
+        options: InferenceOptions
+    ) async throws -> InferenceResponse {
+        return InferenceResponse(
+            content: "Mock tool response",
+            toolCalls: [],
+            finishReason: .completed
+        )
+    }
+}
+
+// Use in tests
+let agent = ReActAgent.Builder()
+    .inferenceProvider(MockInferenceProvider())
+    .build()
+
+let result = try await agent.run("test input")
+```
+
+### Test Example
+
+```swift
+import XCTest
+@testable import SwiftAgents
+
+final class AgentTests: XCTestCase {
+    func testAgentExecution() async throws {
+        let mockProvider = MockInferenceProvider()
+        let agent = ReActAgent.Builder()
+            .inferenceProvider(mockProvider)
+            .instructions("You are a test agent")
+            .build()
+
+        let result = try await agent.run("Hello")
+
+        XCTAssertFalse(result.output.isEmpty)
+        XCTAssertGreaterThan(result.duration, .zero)
+    }
+
+    func testAgentWithMemory() async throws {
+        let memory = ConversationMemory(maxTokens: 1000)
+        let agent = ReActAgent.Builder()
+            .inferenceProvider(MockInferenceProvider())
+            .memory(memory)
+            .build()
+
+        _ = try await agent.run("My name is Alice")
+
+        let messages = await memory.getAllMessages()
+        XCTAssertEqual(messages.count, 2) // User + Assistant
+    }
+}
+```
 
 ---
 
 ## Examples
 
-| Example | Description |
-|---------|-------------|
-| [BasicAgent](Examples/BasicAgent) | Minimal agent setup and execution |
-| [ChatApp](Examples/ChatApp) | Complete SwiftUI chat application |
-| [MultiAgentWorkflow](Examples/MultiAgentWorkflow) | Supervisor-worker orchestration |
+| Example | Description | Location |
+|---------|-------------|----------|
+| BasicAgent | Minimal agent setup and execution | `Examples/BasicAgent/` |
+| ToolIntegration | Custom tool development | `Examples/ToolIntegration/` |
+| MemorySystems | Different memory implementations | `Examples/MemorySystems/` |
+| MultiAgentWorkflow | Supervisor-worker orchestration | `Examples/MultiAgentWorkflow/` |
+| ChatApp | Complete SwiftUI chat application | `Examples/ChatApp/` |
+| StreamingResponses | Real-time streaming with UI updates | `Examples/StreamingResponses/` |
+
+---
+
+## Advanced Topics
+
+### Custom InferenceProvider
+
+Integrate with any LLM backend:
+
+```swift
+import SwiftAgents
+
+struct CustomLLMProvider: InferenceProvider {
+    private let apiClient: MyAPIClient
+
+    func generate(prompt: String, options: InferenceOptions) async throws -> String {
+        let response = try await apiClient.complete(
+            prompt: prompt,
+            temperature: options.temperature,
+            maxTokens: options.maxTokens
+        )
+        return response.text
+    }
+
+    func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    for try await chunk in apiClient.streamComplete(prompt: prompt) {
+                        continuation.yield(chunk)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    func generateWithToolCalls(
+        prompt: String,
+        tools: [ToolDefinition],
+        options: InferenceOptions
+    ) async throws -> InferenceResponse {
+        let response = try await apiClient.completeWithTools(
+            prompt: prompt,
+            tools: tools.map { convertToAPIFormat($0) }
+        )
+
+        return InferenceResponse(
+            content: response.text,
+            toolCalls: response.toolCalls.map { parseToolCall($0) },
+            finishReason: parseFinishReason(response.stopReason)
+        )
+    }
+}
+```
+
+### Custom Memory Implementation
+
+Create specialized memory strategies:
+
+```swift
+import SwiftAgents
+
+public actor VectorMemory: AgentMemory {
+    private var messages: [MemoryMessage] = []
+    private let vectorStore: VectorStore
+    private let embedder: Embedder
+
+    public init(vectorStore: VectorStore, embedder: Embedder) {
+        self.vectorStore = vectorStore
+        self.embedder = embedder
+    }
+
+    public func add(_ message: MemoryMessage) async {
+        messages.append(message)
+
+        // Generate embedding and store
+        let embedding = await embedder.embed(message.content)
+        await vectorStore.store(
+            id: message.id,
+            embedding: embedding,
+            metadata: ["role": message.role]
+        )
+    }
+
+    public func getContext(for query: String, tokenLimit: Int) async -> String {
+        // Semantic search for relevant messages
+        let queryEmbedding = await embedder.embed(query)
+        let results = await vectorStore.search(
+            embedding: queryEmbedding,
+            limit: 10
+        )
+
+        // Retrieve and format relevant messages
+        let relevantMessages = results.compactMap { result in
+            messages.first { $0.id == result.id }
+        }
+
+        return formatMessagesForContext(
+            relevantMessages,
+            tokenLimit: tokenLimit
+        )
+    }
+
+    public func getAllMessages() async -> [MemoryMessage] {
+        messages
+    }
+
+    public func clear() async {
+        messages.removeAll()
+        await vectorStore.clear()
+    }
+
+    public var count: Int {
+        messages.count
+    }
+}
+```
+
+### Error Handling
+
+SwiftAgents provides comprehensive error types:
+
+```swift
+enum AgentError: Error {
+    case invalidInput(reason: String)
+    case toolNotFound(name: String)
+    case toolExecutionFailed(toolName: String, underlyingError: String)
+    case invalidToolArguments(toolName: String, reason: String)
+    case maxIterationsExceeded(iterations: Int)
+    case generationFailed(reason: String)
+    case inferenceProviderUnavailable(reason: String)
+    case cancelled
+    case internalError(reason: String)
+}
+
+// Usage
+do {
+    let result = try await agent.run(input)
+} catch AgentError.toolNotFound(let name) {
+    print("Tool '\(name)' not found")
+} catch AgentError.maxIterationsExceeded(let iterations) {
+    print("Agent exceeded max iterations: \(iterations)")
+} catch {
+    print("Unexpected error: \(error)")
+}
+```
+
+---
+
+## Performance Considerations
+
+- **Memory**: Use `SlidingWindowMemory` for bounded memory usage
+- **Concurrency**: Leverage `ParallelGroup` for independent agent tasks
+- **Streaming**: Use `stream()` for real-time UI updates
+- **Circuit Breakers**: Prevent cascading failures in distributed systems
+- **Tracing**: Use `BufferedTracer` in production to reduce overhead
+- **Actor Isolation**: All agents and memory are actors—calls are async by design
 
 ---
 
 ## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+### Development Workflow
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes following Swift 6.2 concurrency guidelines
+4. Add tests for new functionality
+5. Run test suite: `swift test`
+6. Run formatter: `swift package plugin --allow-writing-to-package-directory swiftformat`
+7. Commit changes: `git commit -m 'Add amazing feature'`
+8. Push to branch: `git push origin feature/amazing-feature`
+9. Open a Pull Request
+
+### Code Standards
+
+- All public APIs must have documentation comments
+- All public types must conform to `Sendable`
+- Use actors for mutable shared state
+- Prefer `async/await` over callbacks
+- Follow SwiftAgents naming conventions
+- Add tests for new features
+
+---
+
+## Roadmap
+
+- [ ] Additional agent patterns (Plan-and-Execute, Reflexion)
+- [ ] Vector memory with embedding support
+- [ ] More built-in tools (web search, file system, etc.)
+- [ ] SwiftData schema versioning for memory persistence
+- [ ] Agent collaboration protocols
+- [ ] Multi-modal support (images, audio)
+- [ ] Fine-tuning integration for specialized agents
+- [ ] Performance benchmarking suite
 
 ---
 
@@ -175,3 +1091,17 @@ SwiftAgents is released under the MIT License. See [LICENSE](LICENSE) for detail
 - Inspired by [LangChain](https://langchain.com) and [AutoGPT](https://autogpt.net)
 - Built for Apple's [Foundation Models](https://developer.apple.com/machine-learning/foundation-models/)
 - Part of the SwiftAI ecosystem
+- Developed with Swift 6.2's strict concurrency model
+
+---
+
+## Support
+
+- **Documentation**: [Full documentation](https://chriskarani.github.io/SwiftAgents/)
+- **Issues**: [GitHub Issues](https://github.com/chriskarani/SwiftAgents/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/chriskarani/SwiftAgents/discussions)
+- **Twitter**: [@chriskarani](https://twitter.com/chriskarani)
+
+---
+
+Built with ❤️ for Apple platforms using Swift 6.2

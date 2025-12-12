@@ -1,0 +1,369 @@
+// AgentTracer.swift
+// SwiftAgents Framework
+//
+// Tracer protocol and implementations for agent observability.
+// Provides composite tracers, no-op tracers, and buffered tracers for flexible tracing strategies.
+
+import Foundation
+
+// MARK: - Agent Tracer Protocol
+
+/// Protocol defining the contract for tracing agent execution events.
+///
+/// `AgentTracer` is the core abstraction for observability in SwiftAgents.
+/// Implementations can log to console, send to telemetry systems, or store events for analysis.
+///
+/// ## Conformance Requirements
+///
+/// - Must be an `actor` (inherited from protocol requirements)
+/// - Must be `Sendable` for safe concurrent access
+/// - All methods are implicitly `async` due to actor isolation
+///
+/// ## Example Implementation
+///
+/// ```swift
+/// public actor CustomTracer: AgentTracer {
+///     private var events: [TraceEvent] = []
+///
+///     public func trace(_ event: TraceEvent) async {
+///         events.append(event)
+///         print("[TRACE] \(event)")
+///     }
+///
+///     public func flush() async {
+///         print("Flushing \(events.count) events")
+///         events.removeAll()
+///     }
+/// }
+/// ```
+///
+/// ## Usage Example
+///
+/// ```swift
+/// let tracer: AgentTracer = ConsoleTracer(minimumLevel: .info)
+///
+/// await tracer.trace(.agentStart(
+///     traceId: traceId,
+///     agentName: "MyAgent"
+/// ))
+/// ```
+public protocol AgentTracer: Actor, Sendable {
+    /// Traces an event.
+    ///
+    /// Implementations should handle the event appropriately based on their purpose
+    /// (e.g., logging, storing, forwarding to telemetry systems).
+    ///
+    /// - Parameter event: The trace event to record.
+    func trace(_ event: TraceEvent) async
+
+    /// Flushes any buffered events.
+    ///
+    /// This method provides a hook for tracers that buffer events to ensure
+    /// they are persisted or transmitted. The default implementation is a no-op.
+    func flush() async
+}
+
+// MARK: - Default Implementation
+
+extension AgentTracer {
+    /// Default flush implementation that does nothing.
+    ///
+    /// Override this method in your tracer if you need to flush buffered events.
+    public func flush() async {
+        // Default: no-op
+    }
+}
+
+// MARK: - Composite Tracer
+
+/// A tracer that forwards events to multiple child tracers.
+///
+/// `CompositeTracer` enables fan-out tracing patterns, where a single event
+/// is sent to multiple destinations (e.g., console + file + telemetry service).
+///
+/// ## Features
+///
+/// - Filters events by minimum level before forwarding
+/// - Supports parallel or sequential event forwarding
+/// - Gracefully handles failures in individual tracers
+///
+/// ## Example
+///
+/// ```swift
+/// let tracer = CompositeTracer(
+///     tracers: [consoleTracer, fileTracer, telemetryTracer],
+///     minimumLevel: .info,
+///     parallel: true
+/// )
+///
+/// await tracer.trace(event) // Forwards to all three tracers in parallel
+/// ```
+public actor CompositeTracer: AgentTracer {
+    /// The child tracers to forward events to.
+    private let tracers: [any AgentTracer]
+
+    /// The minimum event level to forward. Events below this level are discarded.
+    private let minimumLevel: EventLevel
+
+    /// Whether to forward events in parallel (true) or sequentially (false).
+    private let parallel: Bool
+
+    /// Creates a composite tracer.
+    ///
+    /// - Parameters:
+    ///   - tracers: The child tracers to forward events to.
+    ///   - minimumLevel: Minimum event level to forward. Default: `.trace` (all events).
+    ///   - parallel: Whether to forward events in parallel. Default: `true`.
+    public init(
+        tracers: [any AgentTracer],
+        minimumLevel: EventLevel = .trace,
+        parallel: Bool = true
+    ) {
+        self.tracers = tracers
+        self.minimumLevel = minimumLevel
+        self.parallel = parallel
+    }
+
+    public func trace(_ event: TraceEvent) async {
+        // Filter events below minimum level
+        guard event.level >= minimumLevel else { return }
+
+        if parallel {
+            // Forward to all tracers in parallel using TaskGroup
+            await withTaskGroup(of: Void.self) { group in
+                for tracer in tracers {
+                    group.addTask {
+                        await tracer.trace(event)
+                    }
+                }
+            }
+        } else {
+            // Forward to tracers sequentially
+            for tracer in tracers {
+                await tracer.trace(event)
+            }
+        }
+    }
+
+    public func flush() async {
+        if parallel {
+            // Flush all tracers in parallel
+            await withTaskGroup(of: Void.self) { group in
+                for tracer in tracers {
+                    group.addTask {
+                        await tracer.flush()
+                    }
+                }
+            }
+        } else {
+            // Flush tracers sequentially
+            for tracer in tracers {
+                await tracer.flush()
+            }
+        }
+    }
+}
+
+// MARK: - No-Op Tracer
+
+/// A tracer that discards all events.
+///
+/// `NoOpTracer` is useful for:
+/// - Testing scenarios where tracing is not needed
+/// - Disabling tracing in production without code changes
+/// - Default tracer values in APIs
+///
+/// ## Example
+///
+/// ```swift
+/// let tracer: AgentTracer = NoOpTracer()
+/// await tracer.trace(event) // Event is discarded
+/// ```
+public actor NoOpTracer: AgentTracer {
+    /// Creates a no-op tracer.
+    public init() {}
+
+    /// Discards the event without processing.
+    public func trace(_ event: TraceEvent) async {
+        // Intentionally empty - discard all events
+    }
+
+    /// No-op flush implementation.
+    public func flush() async {
+        // Intentionally empty
+    }
+}
+
+// MARK: - Buffered Tracer
+
+/// A tracer that buffers events and flushes them in batches to a destination tracer.
+///
+/// `BufferedTracer` reduces overhead by batching trace events and flushing them
+/// periodically or when the buffer reaches capacity. This is particularly useful
+/// for high-throughput scenarios or when sending events to remote systems.
+///
+/// ## Features
+///
+/// - Automatic flush when buffer reaches `maxBufferSize`
+/// - Periodic flush based on `flushInterval`
+/// - Thread-safe buffering using actor isolation
+///
+/// ## Example
+///
+/// ```swift
+/// let destination = ConsoleTracer()
+/// let buffered = BufferedTracer(
+///     destination: destination,
+///     maxBufferSize: 100,
+///     flushInterval: .seconds(5)
+/// )
+///
+/// // Events are buffered until 100 events or 5 seconds
+/// await buffered.trace(event1)
+/// await buffered.trace(event2)
+/// // ... more events ...
+///
+/// // Manually flush if needed
+/// await buffered.flush()
+/// ```
+public actor BufferedTracer: AgentTracer {
+    /// The buffered events waiting to be flushed.
+    private var buffer: [TraceEvent] = []
+
+    /// The maximum number of events to buffer before auto-flushing.
+    private let maxBufferSize: Int
+
+    /// The time interval between automatic flushes.
+    private let flushInterval: Duration
+
+    /// The destination tracer to forward events to.
+    private let destination: any AgentTracer
+
+    /// The task that handles periodic flushing.
+    private var flushTask: Task<Void, Never>?
+
+    /// The last time the buffer was flushed.
+    private var lastFlushTime: ContinuousClock.Instant
+
+    /// Creates a buffered tracer.
+    ///
+    /// - Parameters:
+    ///   - destination: The tracer to forward buffered events to.
+    ///   - maxBufferSize: Maximum events to buffer before auto-flush. Default: `100`.
+    ///   - flushInterval: Time between automatic flushes. Default: `5 seconds`.
+    public init(
+        destination: any AgentTracer,
+        maxBufferSize: Int = 100,
+        flushInterval: Duration = .seconds(5)
+    ) {
+        self.destination = destination
+        self.maxBufferSize = maxBufferSize
+        self.flushInterval = flushInterval
+        self.lastFlushTime = ContinuousClock.now
+        self.flushTask = nil
+    }
+
+    /// Starts the periodic flush task. Call this after initialization.
+    public func start() {
+        guard flushTask == nil else { return }
+        flushTask = Task { [weak self] in
+            await self?.periodicFlush()
+        }
+    }
+
+    deinit {
+        // Cancel the periodic flush task
+        flushTask?.cancel()
+    }
+
+    public func trace(_ event: TraceEvent) async {
+        buffer.append(event)
+
+        // Auto-flush if buffer is full
+        if buffer.count >= maxBufferSize {
+            await flush()
+        }
+    }
+
+    public func flush() async {
+        guard !buffer.isEmpty else { return }
+
+        // Copy buffer and clear it
+        let eventsToFlush = buffer
+        buffer.removeAll()
+        lastFlushTime = ContinuousClock.now
+
+        // Forward all buffered events to destination
+        for event in eventsToFlush {
+            await destination.trace(event)
+        }
+
+        // Flush the destination as well
+        await destination.flush()
+    }
+
+    /// Periodically flushes the buffer based on the flush interval.
+    private func periodicFlush() async {
+        while !Task.isCancelled {
+            // Sleep for the flush interval
+            do {
+                try await Task.sleep(for: flushInterval)
+            } catch {
+                // Task was cancelled
+                break
+            }
+
+            // Check if enough time has passed since last flush
+            let now = ContinuousClock.now
+            let elapsed = now - lastFlushTime
+
+            if elapsed >= flushInterval {
+                await flush()
+            }
+        }
+    }
+}
+
+// MARK: - Convenience Extensions
+
+extension AgentTracer {
+    /// Traces multiple events sequentially.
+    ///
+    /// - Parameter events: The events to trace.
+    public func trace(_ events: [TraceEvent]) async {
+        for event in events {
+            await trace(event)
+        }
+    }
+}
+
+// MARK: - Type Erasure
+
+/// Type-erased wrapper for `AgentTracer` protocol.
+///
+/// This allows storing heterogeneous tracers in collections while maintaining
+/// the actor-based interface.
+public actor AnyAgentTracer: AgentTracer {
+    private let _trace: @Sendable (TraceEvent) async -> Void
+    private let _flush: @Sendable () async -> Void
+
+    /// Creates a type-erased tracer.
+    ///
+    /// - Parameter tracer: The tracer to wrap.
+    public init<T: AgentTracer>(_ tracer: T) {
+        self._trace = { event in
+            await tracer.trace(event)
+        }
+        self._flush = {
+            await tracer.flush()
+        }
+    }
+
+    public func trace(_ event: TraceEvent) async {
+        await _trace(event)
+    }
+
+    public func flush() async {
+        await _flush()
+    }
+}
