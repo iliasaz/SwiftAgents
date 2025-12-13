@@ -26,11 +26,8 @@ SwiftAgents provides the agent orchestration layer on top of SwiftAI SDK and Fou
 ---
 
 ## Requirements
-
-- **iOS 26.0+** / **macOS 26.0+** / **watchOS 26.0+** / **tvOS 26.0+** / **visionOS 26.0+**
 - **Swift 6.2+**
 - **Xcode 26.0+**
-- **Foundation Models** or compatible **InferenceProvider** implementation
 
 ---
 
