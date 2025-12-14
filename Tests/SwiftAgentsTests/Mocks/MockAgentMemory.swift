@@ -111,6 +111,12 @@ public actor MockAgentMemory: AgentMemory {
         }
     }
 
+    public var isEmpty: Bool {
+        get async {
+            messages.isEmpty
+        }
+    }
+
     // MARK: - Test Helpers
 
     /// Resets all state to defaults.
