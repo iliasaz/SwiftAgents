@@ -15,7 +15,7 @@ struct ConversationMemoryTests {
         let memory = ConversationMemory()
 
         #expect(await memory.maxMessages == 100)
-        #expect(await memory.count == 0)
+        #expect(await memory.isEmpty)
     }
 
     @Test("Creates with custom max messages")
@@ -144,7 +144,7 @@ struct ConversationMemoryTests {
 
         await memory.clear()
 
-        #expect(await memory.count == 0)
+        #expect(await memory.isEmpty)
     }
 
     // MARK: - Batch Operations Tests

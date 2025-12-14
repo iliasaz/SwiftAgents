@@ -92,9 +92,9 @@ public struct FailingTool: Tool, Sendable {
 
 /// A spy tool that records all invocations.
 public actor SpyTool: Tool {
-    public nonisolated let name: String
-    public nonisolated let description: String
-    public nonisolated let parameters: [ToolParameter]
+    nonisolated public let name: String
+    nonisolated public let description: String
+    nonisolated public let parameters: [ToolParameter]
 
     private var calls: [(arguments: [String: SendableValue], timestamp: Date)] = []
     private let result: SendableValue

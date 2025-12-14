@@ -29,7 +29,7 @@ struct SwiftDataMemoryTests {
 
         #expect(await memory.conversationId == "test")
         #expect(await memory.maxMessages == 0)
-        #expect(await memory.count == 0)
+        #expect(await memory.isEmpty)
     }
 
     @Test("Creates with custom conversation ID")
@@ -140,7 +140,7 @@ struct SwiftDataMemoryTests {
 
         await memory.clear()
 
-        #expect(await memory.count == 0)
+        #expect(await memory.isEmpty)
     }
 
     // MARK: - Batch Operations Tests
@@ -221,7 +221,7 @@ struct SwiftDataMemoryTests {
 
         await memory.deleteConversation("to-delete")
 
-        #expect(await memory.count == 0)
+        #expect(await memory.isEmpty)
     }
 
     @Test("Gets message count for conversation")

@@ -475,7 +475,7 @@ struct AgentErrorTests {
         
         for error in allErrors {
             #expect(!error.localizedDescription.isEmpty)
-            #expect(error.localizedDescription.count > 0)
+            #expect(!error.localizedDescription.isEmpty)
         }
     }
     

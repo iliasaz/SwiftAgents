@@ -15,7 +15,7 @@ struct SlidingWindowMemoryTests {
         let memory = SlidingWindowMemory()
 
         #expect(await memory.maxTokens == 4000)
-        #expect(await memory.count == 0)
+        #expect(await memory.isEmpty)
         #expect(await memory.tokenCount == 0)
     }
 
@@ -138,7 +138,7 @@ struct SlidingWindowMemoryTests {
 
         await memory.clear()
 
-        #expect(await memory.count == 0)
+        #expect(await memory.isEmpty)
         #expect(await memory.tokenCount == 0)
     }
 

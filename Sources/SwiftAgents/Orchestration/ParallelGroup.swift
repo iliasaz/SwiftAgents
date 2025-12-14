@@ -139,7 +139,7 @@ public enum MergeStrategies {
         public init() {}
 
         public func merge(_ results: [String: AgentResult]) async throws -> AgentResult {
-            guard let firstResult = results.sorted(by: { $0.key < $1.key }).first else {
+            guard let firstResult = results.min(by: { $0.key < $1.key }) else {
                 throw OrchestrationError.mergeStrategyFailed(reason: "No results to merge")
             }
 
@@ -404,7 +404,7 @@ public actor ParallelGroup: Agent {
         maxConcurrency: Int? = nil,
         configuration: AgentConfiguration = .default
     ) {
-        self.agents = agents.enumerated().map { (index, agent) in
+        self.agents = agents.enumerated().map { index, agent in
             ("agent_\(index)", agent)
         }
         self.mergeStrategy = mergeStrategy
@@ -537,7 +537,7 @@ public actor ParallelGroup: Agent {
     ///
     /// - Parameter input: The input to send to all agents.
     /// - Returns: An async stream of agent events.
-    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -569,7 +569,7 @@ public actor ParallelGroup: Agent {
 // MARK: - CustomStringConvertible
 
 extension ParallelGroup: CustomStringConvertible {
-    public nonisolated var description: String {
+    nonisolated public var description: String {
         let agentNames = agents.map { $0.name }.joined(separator: ", ")
         return "ParallelGroup(\(agents.count) agents: [\(agentNames)])"
     }
