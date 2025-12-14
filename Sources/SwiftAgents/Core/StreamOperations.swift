@@ -582,24 +582,49 @@ extension AsyncThrowingStream where Element == AgentEvent, Failure == Error {
 
 // MARK: - AgentEventStream Namespace
 
+/// Strategy for handling errors when merging multiple streams.
+public enum MergeErrorStrategy: Sendable {
+    /// Fail immediately on the first error from any stream.
+    case failFast
+
+    /// Continue processing other streams and collect errors as events.
+    /// Errors are yielded as `.failed` events.
+    case continueAndCollect
+
+    /// Ignore all errors from individual streams (legacy behavior).
+    /// Use with caution - errors will be silently swallowed.
+    case ignoreErrors
+}
+
 /// Namespace for stream utility functions.
 public enum AgentEventStream {
     /// Merges multiple agent event streams into one.
     ///
     /// Events from all streams are yielded as they arrive, in any order.
     ///
-    /// - Parameter streams: The streams to merge.
+    /// - Parameters:
+    ///   - streams: The streams to merge.
+    ///   - errorStrategy: How to handle errors from individual streams. Defaults to `.continueAndCollect`.
     /// - Returns: A merged stream of all events.
     ///
     /// Example:
     /// ```swift
+    /// // Default: errors become .failed events
     /// let merged = AgentEventStream.merge(stream1, stream2, stream3)
     /// for try await event in merged {
-    ///     // Events from all streams
+    ///     // Events from all streams, errors as .failed events
     /// }
+    ///
+    /// // Fail fast on first error
+    /// let strictMerge = AgentEventStream.merge(stream1, stream2, errorStrategy: .failFast)
     /// ```
+    ///
+    /// - Note: When using `.continueAndCollect`, errors are converted to `.failed` events,
+    ///   allowing other streams to continue processing. Use `.failFast` for critical workflows
+    ///   where any error should stop all processing.
     public static func merge(
-        _ streams: AsyncThrowingStream<AgentEvent, Error>...
+        _ streams: AsyncThrowingStream<AgentEvent, Error>...,
+        errorStrategy: MergeErrorStrategy = .continueAndCollect
     ) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
@@ -611,7 +636,17 @@ public enum AgentEventStream {
                                     continuation.yield(event)
                                 }
                             } catch {
-                                // Individual stream errors are ignored in merge
+                                switch errorStrategy {
+                                case .failFast:
+                                    continuation.finish(throwing: error)
+                                case .continueAndCollect:
+                                    // Convert error to a failed event
+                                    let agentError = error as? AgentError ?? .internalError(reason: error.localizedDescription)
+                                    continuation.yield(.failed(error: agentError))
+                                case .ignoreErrors:
+                                    // Silently ignore - legacy behavior
+                                    break
+                                }
                             }
                         }
                     }

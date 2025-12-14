@@ -23,6 +23,35 @@ import Foundation
 /// let result = try await combined.execute("a,b,c,d")
 /// // Result: "Found 4 items"
 /// ```
+///
+/// ## Memory Characteristics
+///
+/// Each pipeline operation (`map`, `then`, `>>>`) creates a new closure that captures
+/// the previous pipeline. For long chains, this creates a nested capture chain where:
+/// - Each pipeline step retains a reference to the previous step
+/// - Memory usage scales linearly with chain length: O(n) where n = number of steps
+/// - Each closure captures its transform function and any context it references
+///
+/// **Performance Considerations**:
+/// - Short chains (≤10 steps): Negligible overhead, optimal for most use cases
+/// - Medium chains (10-50 steps): Acceptable overhead, monitor memory if transformations capture large contexts
+/// - Long chains (50+ steps): Consider refactoring into batched operations or custom pipelines
+///
+/// **Best Practices**:
+/// ```swift
+/// // ✅ Good - short, focused chains
+/// let pipeline = parseJSON >>> extractField("data") >>> validateSchema
+///
+/// // ⚠️ Acceptable - moderate chain, monitor if transforms capture large data
+/// let pipeline = step1 >>> step2 >>> step3 >>> ... >>> step15
+///
+/// // ❌ Avoid - very long chains may accumulate memory
+/// // Consider refactoring into multiple pipelines or a custom implementation
+/// let pipeline = step1 >>> step2 >>> ... >>> step100
+/// ```
+///
+/// The capture chain is deallocated after pipeline execution completes, so memory
+/// overhead only persists for the lifetime of the pipeline instance itself.
 public struct Pipeline<Input: Sendable, Output: Sendable>: Sendable {
     /// The transformation function.
     private let transform: @Sendable (Input) async throws -> Output
@@ -139,13 +168,28 @@ extension Pipeline {
 extension Pipeline {
     /// Catches errors and returns a fallback value.
     ///
-    /// - Parameter fallback: The value to return on error.
+    /// - Parameters:
+    ///   - fallback: The value to return on error.
+    ///   - onError: Optional closure called with the error before returning fallback.
+    ///              Useful for logging or diagnostic purposes.
     /// - Returns: A pipeline that returns the fallback on error.
-    public func catchError(_ fallback: Output) -> Pipeline<Input, Output> {
+    ///
+    /// Example:
+    /// ```swift
+    /// let safe = pipeline.catchError("default") { error in
+    ///     print("Pipeline failed: \(error)")
+    ///     // Log to analytics, monitoring, etc.
+    /// }
+    /// ```
+    public func catchError(
+        _ fallback: Output,
+        onError: (@Sendable (Error) -> Void)? = nil
+    ) -> Pipeline<Input, Output> {
         Pipeline { input in
             do {
                 return try await self.execute(input)
             } catch {
+                onError?(error)
                 return fallback
             }
         }

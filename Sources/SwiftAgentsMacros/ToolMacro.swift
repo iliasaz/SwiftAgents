@@ -31,6 +31,38 @@ import Foundation
 /// - `parameters` array (from @Parameter properties)
 /// - `execute(arguments:)` wrapper method
 /// - Tool and Sendable conformances
+///
+/// ## Return Type Encoding
+///
+/// The macro automatically converts your tool's return type to `SendableValue`:
+///
+/// - **Primitive types** (String, Int, Double, Bool) are encoded directly
+/// - **SendableValue** returns are passed through unchanged
+/// - **Void/()** returns become `.null`
+/// - **Complex types** (custom structs, enums, etc.) are handled in two ways:
+///   1. First, the macro attempts to encode them using `SendableValue(encoding:)`, which uses `Codable`
+///   2. If encoding fails, the value is converted to a string using `String(describing:)` as a fallback
+///
+/// **Important**: The `String(describing:)` fallback means type information is lost. For complex return types:
+/// - Ensure your type conforms to `Codable` for proper encoding
+/// - Or manually return `SendableValue` from your `execute()` method
+/// - Be aware that sensitive data may be exposed in string representations
+///
+/// Example with complex type:
+/// ```swift
+/// struct CustomResult: Codable, Sendable {
+///     let value: Int
+///     let metadata: String
+/// }
+///
+/// @Tool("Returns custom data")
+/// struct MyTool {
+///     func execute() async throws -> CustomResult {
+///         // Will be encoded via Codable automatically
+///         return CustomResult(value: 42, metadata: "success")
+///     }
+/// }
+/// ```
 public struct ToolMacro: MemberMacro, ExtensionMacro {
 
     // MARK: - MemberMacro
