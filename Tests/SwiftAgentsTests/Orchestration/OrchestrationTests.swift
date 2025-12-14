@@ -1,5 +1,5 @@
 // OrchestrationTests.swift
-// SwiftAgents Framework Tests
+// SwiftAgents Framework
 //
 // Tests for multi-agent orchestration.
 // Will include:

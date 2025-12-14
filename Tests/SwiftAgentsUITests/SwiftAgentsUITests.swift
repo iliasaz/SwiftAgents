@@ -1,5 +1,5 @@
 // SwiftAgentsUITests.swift
-// SwiftAgents Framework Tests
+// SwiftAgents Framework
 //
 // Tests for SwiftUI components.
 // Will include:

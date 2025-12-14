@@ -1,5 +1,5 @@
 // MockSummarizer.swift
-// SwiftAgents Framework Tests
+// SwiftAgents Framework
 //
 // Mock summarizer for testing memory systems.
 

@@ -1,5 +1,5 @@
 // MockAgentMemory.swift
-// SwiftAgents Framework Tests
+// SwiftAgents Framework
 //
 // Mock memory for testing agents and orchestration.
 

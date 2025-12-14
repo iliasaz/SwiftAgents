@@ -1,5 +1,5 @@
 // SummarizerTests.swift
-// SwiftAgents Framework Tests
+// SwiftAgents Framework
 //
 // Comprehensive tests for Summarizer protocol and implementations.
 

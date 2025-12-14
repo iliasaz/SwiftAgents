@@ -1,5 +1,5 @@
 // SlidingWindowMemoryTests.swift
-// SwiftAgents Framework Tests
+// SwiftAgents Framework
 
 import Testing
 import Foundation

@@ -1,5 +1,5 @@
 // SwiftAgentsTests.swift
-// SwiftAgents
+// SwiftAgents Framework
 
 import Testing
 @testable import SwiftAgents

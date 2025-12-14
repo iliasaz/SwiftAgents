@@ -20,7 +20,10 @@ import Foundation
 /// ```
 public struct CalculatorTool: Tool, Sendable {
     public let name = "calculator"
-    public let description = "Evaluates a mathematical expression and returns the result. Supports +, -, *, /, parentheses, and decimal numbers."
+    public let description = """
+        Evaluates a mathematical expression and returns the result. \
+        Supports +, -, *, /, parentheses, and decimal numbers.
+        """
 
     public let parameters: [ToolParameter] = [
         ToolParameter(
@@ -104,7 +107,10 @@ public struct DateTimeTool: Tool, Sendable {
     public let parameters: [ToolParameter] = [
         ToolParameter(
             name: "format",
-            description: "The date format: 'full' (default), 'date', 'time', 'iso8601', or a custom format string (e.g., 'yyyy-MM-dd')",
+            description: """
+                The date format: 'full' (default), 'date', 'time', 'iso8601', \
+                or a custom format string (e.g., 'yyyy-MM-dd')
+                """,
             type: .string,
             isRequired: false,
             defaultValue: .string("full")
@@ -188,13 +194,19 @@ public struct DateTimeTool: Tool, Sendable {
 /// ```
 public struct StringTool: Tool, Sendable {
     public let name = "string"
-    public let description = "Performs string operations: length, uppercase, lowercase, trim, split, replace, contains, reverse, substring."
+    public let description = """
+        Performs string operations: length, uppercase, lowercase, trim, split, \
+        replace, contains, reverse, substring.
+        """
 
     public let parameters: [ToolParameter] = [
         ToolParameter(
             name: "operation",
             description: "The operation to perform",
-            type: .oneOf(["length", "uppercase", "lowercase", "trim", "split", "replace", "contains", "reverse", "substring"]),
+            type: .oneOf([
+                "length", "uppercase", "lowercase", "trim", "split",
+                "replace", "contains", "reverse", "substring"
+            ]),
             isRequired: true
         ),
         ToolParameter(
