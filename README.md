@@ -603,7 +603,7 @@ let custom = InferenceOptions.default
 │                        Your Application                         │
 │                  (iOS, macOS, watchOS, tvOS, visionOS)          │
 ├─────────────────────────────────────────────────────────────────┤
-│                         SwiftAgentsUI                           │
+│                         UI                                      │
 │                  (Chat Views, Status Indicators)                │
 ├─────────────────────────────────────────────────────────────────┤
 │                          SwiftAgents                            │
@@ -1262,7 +1262,7 @@ SwiftAgents is released under the MIT License. See [LICENSE](LICENSE) for detail
 ## Acknowledgments
 
 - Inspired by [LangChain](https://langchain.com) and [AutoGPT](https://autogpt.net)
-- Built for Apple's [Foundation Models](https://developer.apple.com/machine-learning/foundation-models/)
+- Built for Apple's [Foundation Models](https://developer.apple.com/machine-learning/foundation-models/) and SwiftAI for LLM inferencee
 - Part of the SwiftAI ecosystem
 - Developed with Swift 6.2's strict concurrency model
 
