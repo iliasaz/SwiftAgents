@@ -5,11 +5,11 @@ import CompilerPluginSupport
 let package = Package(
     name: "SwiftAgents",
     platforms: [
-        .macOS(.v26),
-        .iOS(.v26),
-        .watchOS(.v26),
-        .tvOS(.v26),
-        .visionOS(.v26)
+        .macOS(.v14),
+        .iOS(.v17),
+        .watchOS(.v10),
+        .tvOS(.v17),
+        .visionOS(.v1)
     ],
     products: [
         .library(name: "SwiftAgents", targets: ["SwiftAgents"])
