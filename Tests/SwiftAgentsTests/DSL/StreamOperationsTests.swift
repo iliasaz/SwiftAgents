@@ -379,7 +379,7 @@ struct StreamOperationsTests {
 
     // MARK: - Error Handling
 
-    @Test("Catch errors in stream", .disabled("Temporarily disabled to isolate CI crash"))
+    @Test("Catch errors in stream")
     func catchErrorsInStream() async throws {
         let failingStream = makeFailingEventStream(failAfter: 2)
 
