@@ -5,6 +5,8 @@
 
 import Foundation
 
+// MARK: - PersistentMemoryBackend
+
 /// Protocol for persistent memory storage backends.
 ///
 /// Implementations provide platform-specific persistence:
@@ -96,14 +98,14 @@ public protocol PersistentMemoryBackend: Actor, Sendable {
 
 // MARK: - Default Implementations
 
-extension PersistentMemoryBackend {
-    public func storeAll(_ messages: [MemoryMessage], conversationId: String) async throws {
+public extension PersistentMemoryBackend {
+    func storeAll(_ messages: [MemoryMessage], conversationId: String) async throws {
         for message in messages {
             try await store(message, conversationId: conversationId)
         }
     }
 
-    public func deleteOldestMessages(conversationId: String, keepRecent: Int) async throws {
+    func deleteOldestMessages(conversationId: String, keepRecent: Int) async throws {
         // Default implementation: fetch all, keep recent, delete and re-insert
         let allMessages = try await fetchMessages(conversationId: conversationId)
         guard allMessages.count > keepRecent else { return }
@@ -114,31 +116,33 @@ extension PersistentMemoryBackend {
     }
 }
 
-// MARK: - Errors
+// MARK: - PersistentMemoryError
 
 /// Errors that can occur during persistent memory operations.
 public enum PersistentMemoryError: Error, Sendable, CustomStringConvertible {
+    // MARK: Public
+
+    public var description: String {
+        switch self {
+        case let .storeFailed(reason):
+            "Failed to store message: \(reason)"
+        case let .fetchFailed(reason):
+            "Failed to fetch messages: \(reason)"
+        case let .deleteFailed(reason):
+            "Failed to delete messages: \(reason)"
+        case let .connectionFailed(reason):
+            "Database connection failed: \(reason)"
+        case .notConfigured:
+            "Persistent memory backend not configured"
+        case .invalidConversationId:
+            "Invalid conversation ID"
+        }
+    }
+
     case storeFailed(String)
     case fetchFailed(String)
     case deleteFailed(String)
     case connectionFailed(String)
     case notConfigured
     case invalidConversationId
-
-    public var description: String {
-        switch self {
-        case .storeFailed(let reason):
-            return "Failed to store message: \(reason)"
-        case .fetchFailed(let reason):
-            return "Failed to fetch messages: \(reason)"
-        case .deleteFailed(let reason):
-            return "Failed to delete messages: \(reason)"
-        case .connectionFailed(let reason):
-            return "Database connection failed: \(reason)"
-        case .notConfigured:
-            return "Persistent memory backend not configured"
-        case .invalidConversationId:
-            return "Invalid conversation ID"
-        }
-    }
 }

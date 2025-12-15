@@ -3,15 +3,14 @@
 //
 // Tests for MemoryBuilder DSL for composable memory systems.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - MemoryBuilder Tests
+// MARK: - MemoryBuilderTests
 
 @Suite("MemoryBuilder DSL Tests")
 struct MemoryBuilderTests {
-
     // MARK: - Basic Building
 
     @Test("Build composite memory with single component")
@@ -237,17 +236,23 @@ struct MemoryBuilderTests {
 // MARK: - MockVectorMemory
 
 actor MockVectorMemory: AgentMemory, VectorMemoryConfigurable {
-    private var messages: [MemoryMessage] = []
-    private var similarityThreshold: Double = 0.5
-    private var maxResults: Int = 10
+    // MARK: Internal
+
+    var count: Int {
+        get async { messages.count }
+    }
+
+    var isEmpty: Bool {
+        get async { messages.isEmpty }
+    }
 
     func add(_ message: MemoryMessage) async {
         messages.append(message)
     }
 
-    func getContext(for query: String, tokenLimit: Int) async -> String {
+    func getContext(for _: String, tokenLimit _: Int) async -> String {
         let recent = Array(messages.suffix(maxResults))
-        return recent.map { $0.content }.joined(separator: "\n")
+        return recent.map(\.content).joined(separator: "\n")
     }
 
     func getAllMessages() async -> [MemoryMessage] {
@@ -258,19 +263,17 @@ actor MockVectorMemory: AgentMemory, VectorMemoryConfigurable {
         messages = []
     }
 
-    var count: Int {
-        get async { messages.count }
-    }
-
-    var isEmpty: Bool {
-        get async { messages.isEmpty }
-    }
-
-    nonisolated func withSimilarityThreshold(_ threshold: Double) -> MemoryComponent {
+    nonisolated func withSimilarityThreshold(_: Double) -> MemoryComponent {
         MemoryComponent(memory: self)
     }
 
-    nonisolated func withMaxResults(_ max: Int) -> MemoryComponent {
+    nonisolated func withMaxResults(_: Int) -> MemoryComponent {
         MemoryComponent(memory: self)
     }
+
+    // MARK: Private
+
+    private var messages: [MemoryMessage] = []
+    private var similarityThreshold: Double = 0.5
+    private var maxResults: Int = 10
 }

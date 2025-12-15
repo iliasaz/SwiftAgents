@@ -109,5 +109,4 @@ public enum Log {
     public static func bootstrap(_ factory: @escaping @Sendable (String) -> LogHandler) {
         LoggingSystem.bootstrap(factory)
     }
-
 }

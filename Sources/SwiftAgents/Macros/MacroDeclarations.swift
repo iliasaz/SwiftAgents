@@ -270,7 +270,7 @@ public macro Prompt(_ content: String) -> PromptString = #externalMacro(
     type: "PromptMacro"
 )
 
-// MARK: - Supporting Types
+// MARK: - PromptString
 
 /// A validated prompt string created by the #Prompt macro.
 ///
@@ -284,6 +284,9 @@ public struct PromptString: Sendable, ExpressibleByStringLiteral, ExpressibleByS
     /// Names of interpolated values (for debugging/logging).
     public let interpolations: [String]
 
+    /// String description.
+    public var description: String { content }
+
     /// Creates a prompt string with content and interpolation info.
     public init(content: String, interpolations: [String] = []) {
         self.content = content
@@ -292,26 +295,22 @@ public struct PromptString: Sendable, ExpressibleByStringLiteral, ExpressibleByS
 
     /// Creates a prompt string from a string literal.
     public init(stringLiteral value: String) {
-        self.content = value
-        self.interpolations = []
+        content = value
+        interpolations = []
     }
 
     /// Creates from a simple string.
     public init(_ string: String) {
-        self.content = string
-        self.interpolations = []
+        content = string
+        interpolations = []
     }
-
-    /// String description.
-    public var description: String { content }
 }
 
 // MARK: - PromptString String Interpolation
 
-extension PromptString {
-    public struct StringInterpolation: StringInterpolationProtocol {
-        var content: String = ""
-        var interpolations: [String] = []
+public extension PromptString {
+    struct StringInterpolation: StringInterpolationProtocol {
+        // MARK: Public
 
         public init(literalCapacity: Int, interpolationCount: Int) {
             content.reserveCapacity(literalCapacity)
@@ -322,7 +321,7 @@ extension PromptString {
             content += literal
         }
 
-        public mutating func appendInterpolation<T>(_ value: T) {
+        public mutating func appendInterpolation(_ value: some Any) {
             content += String(describing: value)
             interpolations.append(String(describing: type(of: value)))
         }
@@ -341,10 +340,15 @@ extension PromptString {
             content += value.joined(separator: ", ")
             interpolations.append("[String]")
         }
+
+        // MARK: Internal
+
+        var content: String = ""
+        var interpolations: [String] = []
     }
 
-    public init(stringInterpolation: StringInterpolation) {
-        self.content = stringInterpolation.content
-        self.interpolations = stringInterpolation.interpolations
+    init(stringInterpolation: StringInterpolation) {
+        content = stringInterpolation.content
+        interpolations = stringInterpolation.interpolations
     }
 }

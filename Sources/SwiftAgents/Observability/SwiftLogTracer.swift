@@ -6,6 +6,8 @@
 import Foundation
 import Logging
 
+// MARK: - SwiftLogTracer
+
 /// A cross-platform tracer implementation using swift-log.
 ///
 /// `SwiftLogTracer` provides structured logging for agent execution traces
@@ -32,8 +34,7 @@ import Logging
 /// - `agentName`: Name of the agent (if applicable)
 /// - `toolName`: Name of the tool being invoked (if applicable)
 public actor SwiftLogTracer: AgentTracer {
-    private var logger: Logger
-    private let minimumLevel: EventLevel
+    // MARK: Public
 
     /// Creates a new SwiftLogTracer.
     ///
@@ -44,7 +45,7 @@ public actor SwiftLogTracer: AgentTracer {
         label: String = "com.swiftagents.tracer",
         minimumLevel: EventLevel = .debug
     ) {
-        self.logger = Logger(label: label)
+        logger = Logger(label: label)
         self.minimumLevel = minimumLevel
     }
 
@@ -76,10 +77,15 @@ public actor SwiftLogTracer: AgentTracer {
         // No-op: swift-log handles flushing automatically
     }
 
+    // MARK: Private
+
+    private var logger: Logger
+    private let minimumLevel: EventLevel
+
     // MARK: - Private Helpers
 
     private func formatMessage(_ event: TraceEvent) -> String {
-        var parts: [String] = ["[\(event.kind.rawValue)]"]
+        var parts = ["[\(event.kind.rawValue)]"]
 
         if let agentName = event.agentName {
             parts.append("agent=\(agentName)")
@@ -134,18 +140,18 @@ public actor SwiftLogTracer: AgentTracer {
 
 // MARK: - Convenience Constructors
 
-extension SwiftLogTracer {
+public extension SwiftLogTracer {
     /// Creates a tracer optimized for development with verbose output.
     ///
     /// - Returns: A tracer configured for development.
-    public static func development() -> SwiftLogTracer {
+    static func development() -> SwiftLogTracer {
         SwiftLogTracer(minimumLevel: .trace)
     }
 
     /// Creates a tracer optimized for production with minimal output.
     ///
     /// - Returns: A tracer configured for production.
-    public static func production() -> SwiftLogTracer {
+    static func production() -> SwiftLogTracer {
         SwiftLogTracer(minimumLevel: .info)
     }
 }

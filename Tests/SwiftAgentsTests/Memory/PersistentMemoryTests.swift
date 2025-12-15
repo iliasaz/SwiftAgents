@@ -1,15 +1,16 @@
 // PersistentMemoryTests.swift
 // SwiftAgents Framework
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
+
+// MARK: - PersistentMemoryTests
 
 @Suite("PersistentMemory Tests")
 struct PersistentMemoryTests {
-
     @Test("InMemoryBackend stores and retrieves messages")
-    func testInMemoryBackendBasics() async throws {
+    func inMemoryBackendBasics() async throws {
         let backend = InMemoryBackend()
         let memory = PersistentMemory(backend: backend, conversationId: "test-1")
 
@@ -61,7 +62,7 @@ struct PersistentMemoryTests {
     }
 
     @Test("Different conversations are isolated")
-    func testConversationIsolation() async throws {
+    func conversationIsolation() async throws {
         let backend = InMemoryBackend()
 
         let memory1 = PersistentMemory(backend: backend, conversationId: "conv-1")
@@ -108,9 +109,10 @@ struct PersistentMemoryTests {
     }
 }
 
+// MARK: - InMemoryBackendTests
+
 @Suite("InMemoryBackend Tests")
 struct InMemoryBackendTests {
-
     @Test("allConversationIds returns all conversations")
     func testAllConversationIds() async throws {
         let backend = InMemoryBackend()

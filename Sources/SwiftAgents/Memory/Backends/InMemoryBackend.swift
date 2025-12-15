@@ -24,12 +24,16 @@ import Foundation
 /// let messages = await memory.getAllMessages()
 /// ```
 public actor InMemoryBackend: PersistentMemoryBackend {
-    private var storage: [String: [StoredMessage]] = [:]
+    // MARK: Public
 
-    /// Internal storage representation with timestamp.
-    private struct StoredMessage: Sendable {
-        let message: MemoryMessage
-        let timestamp: Date
+    /// Returns total message count across all conversations.
+    public var totalMessageCount: Int {
+        storage.values.reduce(0) { $0 + $1.count }
+    }
+
+    /// Returns the number of conversations.
+    public var conversationCount: Int {
+        storage.count
     }
 
     /// Creates a new in-memory backend.
@@ -85,13 +89,13 @@ public actor InMemoryBackend: PersistentMemoryBackend {
         storage.removeAll()
     }
 
-    /// Returns total message count across all conversations.
-    public var totalMessageCount: Int {
-        storage.values.reduce(0) { $0 + $1.count }
+    // MARK: Private
+
+    /// Internal storage representation with timestamp.
+    private struct StoredMessage: Sendable {
+        let message: MemoryMessage
+        let timestamp: Date
     }
 
-    /// Returns the number of conversations.
-    public var conversationCount: Int {
-        storage.count
-    }
+    private var storage: [String: [StoredMessage]] = [:]
 }

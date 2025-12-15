@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - Arithmetic Parser
+// MARK: - ArithmeticParser
 
 /// A pure Swift recursive descent parser for arithmetic expressions.
 ///
@@ -38,12 +38,13 @@ import Foundation
 /// Factor     := Number | '(' Expression ')' | '-' Factor | '+' Factor
 /// Number     := [0-9]+ ('.' [0-9]+)?
 /// ```
-internal struct ArithmeticParser: Sendable {
+struct ArithmeticParser: Sendable {
+    // MARK: Internal
 
     // MARK: - Parsing Error
 
     /// Errors that can occur during arithmetic expression parsing.
-    internal enum ParserError: Error, Equatable, Sendable {
+    enum ParserError: Error, Equatable, Sendable {
         /// The expression is empty.
         case emptyExpression
 
@@ -66,7 +67,7 @@ internal struct ArithmeticParser: Sendable {
     // MARK: - Token
 
     /// Represents a lexical token in an arithmetic expression.
-    internal enum Token: Equatable, Sendable {
+    enum Token: Equatable, Sendable {
         case number(Double)
         case plus
         case minus
@@ -77,16 +78,46 @@ internal struct ArithmeticParser: Sendable {
         case end
     }
 
+    // MARK: - Public API
+
+    /// Evaluates an arithmetic expression and returns the result.
+    ///
+    /// - Parameter expression: The arithmetic expression to evaluate.
+    /// - Returns: The numeric result of the expression.
+    /// - Throws: `ParserError` if the expression is invalid or cannot be evaluated.
+    ///
+    /// Example:
+    /// ```swift
+    /// let result = try ArithmeticParser.evaluate("2 + 3 * 4")
+    /// // result == 14.0
+    /// ```
+    static func evaluate(_ expression: String) throws -> Double {
+        // Check for empty expression
+        let trimmed = expression.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            throw ParserError.emptyExpression
+        }
+
+        // Tokenize
+        var tokenizer = Tokenizer(trimmed)
+        let tokens = try tokenizer.tokenize()
+
+        // Parse and evaluate
+        var parser = Parser(tokens: tokens)
+        return try parser.parse()
+    }
+
+    // MARK: Private
+
     // MARK: - Tokenizer
 
     /// Tokenizes an arithmetic expression into a sequence of tokens.
     private struct Tokenizer: Sendable {
-        private let input: String
-        private var currentIndex: String.Index
+        // MARK: Internal
 
         init(_ expression: String) {
-            self.input = expression
-            self.currentIndex = expression.startIndex
+            input = expression
+            currentIndex = expression.startIndex
         }
 
         /// Tokenizes the entire expression.
@@ -119,8 +150,9 @@ internal struct ArithmeticParser: Sendable {
                 case ")":
                     tokens.append(.rightParen)
                     advance()
-                case "0"..."9", ".":
-                    tokens.append(try parseNumber())
+                case ".",
+                     "0"..."9":
+                    try tokens.append(parseNumber())
                 default:
                     throw ParserError.unexpectedToken(String(char))
                 }
@@ -129,6 +161,11 @@ internal struct ArithmeticParser: Sendable {
             tokens.append(.end)
             return tokens
         }
+
+        // MARK: Private
+
+        private let input: String
+        private var currentIndex: String.Index
 
         /// Parses a number from the current position.
         private mutating func parseNumber() throws -> Token {
@@ -177,8 +214,7 @@ internal struct ArithmeticParser: Sendable {
 
     /// Parses tokens into an evaluated result.
     private struct Parser: Sendable {
-        private let tokens: [Token]
-        private var position: Int = 0
+        // MARK: Internal
 
         init(tokens: [Token]) {
             self.tokens = tokens
@@ -193,6 +229,19 @@ internal struct ArithmeticParser: Sendable {
             }
 
             return result
+        }
+
+        // MARK: Private
+
+        private let tokens: [Token]
+        private var position: Int = 0
+
+        /// Gets the current token.
+        private var currentToken: Token {
+            guard position < tokens.count else {
+                return .end
+            }
+            return tokens[position]
         }
 
         /// Parses an expression: Term (('+' | '-') Term)*
@@ -238,7 +287,7 @@ internal struct ArithmeticParser: Sendable {
         /// Parses a factor: Number | '(' Expression ')' | '-' Factor | '+' Factor
         private mutating func parseFactor() throws -> Double {
             switch currentToken {
-            case .number(let value):
+            case let .number(value):
                 advance()
                 return value
 
@@ -253,7 +302,7 @@ internal struct ArithmeticParser: Sendable {
 
             case .minus:
                 advance()
-                return -(try parseFactor())
+                return try -parseFactor()
 
             case .plus:
                 advance()
@@ -267,14 +316,6 @@ internal struct ArithmeticParser: Sendable {
             }
         }
 
-        /// Gets the current token.
-        private var currentToken: Token {
-            guard position < tokens.count else {
-                return .end
-            }
-            return tokens[position]
-        }
-
         /// Advances to the next token.
         private mutating func advance() {
             position += 1
@@ -283,73 +324,44 @@ internal struct ArithmeticParser: Sendable {
         /// Gets a string description of a token for error messages.
         private func tokenDescription(_ token: Token) -> String {
             switch token {
-            case .number(let value): return String(value)
-            case .plus: return "+"
-            case .minus: return "-"
-            case .multiply: return "*"
-            case .divide: return "/"
-            case .leftParen: return "("
-            case .rightParen: return ")"
-            case .end: return "end of expression"
+            case let .number(value): String(value)
+            case .plus: "+"
+            case .minus: "-"
+            case .multiply: "*"
+            case .divide: "/"
+            case .leftParen: "("
+            case .rightParen: ")"
+            case .end: "end of expression"
             }
         }
     }
-
-    // MARK: - Public API
-
-    /// Evaluates an arithmetic expression and returns the result.
-    ///
-    /// - Parameter expression: The arithmetic expression to evaluate.
-    /// - Returns: The numeric result of the expression.
-    /// - Throws: `ParserError` if the expression is invalid or cannot be evaluated.
-    ///
-    /// Example:
-    /// ```swift
-    /// let result = try ArithmeticParser.evaluate("2 + 3 * 4")
-    /// // result == 14.0
-    /// ```
-    internal static func evaluate(_ expression: String) throws -> Double {
-        // Check for empty expression
-        let trimmed = expression.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else {
-            throw ParserError.emptyExpression
-        }
-
-        // Tokenize
-        var tokenizer = Tokenizer(trimmed)
-        let tokens = try tokenizer.tokenize()
-
-        // Parse and evaluate
-        var parser = Parser(tokens: tokens)
-        return try parser.parse()
-    }
 }
 
-// MARK: - ParserError LocalizedError Conformance
+// MARK: - ArithmeticParser.ParserError + LocalizedError
 
 extension ArithmeticParser.ParserError: LocalizedError {
-    internal var errorDescription: String? {
+    var errorDescription: String? {
         switch self {
         case .emptyExpression:
-            return "Expression is empty"
+            "Expression is empty"
         case .unexpectedEndOfExpression:
-            return "Unexpected end of expression"
-        case .unexpectedToken(let token):
-            return "Unexpected token: \(token)"
+            "Unexpected end of expression"
+        case let .unexpectedToken(token):
+            "Unexpected token: \(token)"
         case .divisionByZero:
-            return "Division by zero"
+            "Division by zero"
         case .missingClosingParenthesis:
-            return "Missing closing parenthesis"
-        case .invalidNumber(let value):
-            return "Invalid number: \(value)"
+            "Missing closing parenthesis"
+        case let .invalidNumber(value):
+            "Invalid number: \(value)"
         }
     }
 }
 
-// MARK: - ParserError CustomDebugStringConvertible
+// MARK: - ArithmeticParser.ParserError + CustomDebugStringConvertible
 
 extension ArithmeticParser.ParserError: CustomDebugStringConvertible {
-    internal var debugDescription: String {
+    var debugDescription: String {
         "ArithmeticParser.ParserError.\(self)"
     }
 }

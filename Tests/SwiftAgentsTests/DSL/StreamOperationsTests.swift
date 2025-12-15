@@ -3,14 +3,14 @@
 //
 // Tests for stream operations DSL on AsyncThrowingStream<AgentEvent, Error>.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - Thread-Safe Test Helpers
+// MARK: - SideEffectCollector
 
 actor SideEffectCollector {
-    private var effects: [String] = []
+    // MARK: Internal
 
     func append(_ effect: String) {
         effects.append(effect)
@@ -19,10 +19,16 @@ actor SideEffectCollector {
     func getAll() -> [String] {
         effects
     }
+
+    // MARK: Private
+
+    private var effects: [String] = []
 }
 
+// MARK: - CompletionFlag
+
 actor CompletionFlag {
-    private var completed = false
+    // MARK: Internal
 
     func markComplete() {
         completed = true
@@ -31,13 +37,16 @@ actor CompletionFlag {
     func isComplete() -> Bool {
         completed
     }
+
+    // MARK: Private
+
+    private var completed = false
 }
 
-// MARK: - Stream Operations Tests
+// MARK: - StreamOperationsTests
 
 @Suite("Stream Operations DSL Tests")
 struct StreamOperationsTests {
-
     // MARK: - Filter Operations
 
     @Test("Filter stream by event type")
@@ -67,7 +76,7 @@ struct StreamOperationsTests {
 
         var filtered: [AgentEvent] = []
         for try await event in events.filter({ event in
-            if case .thinking(let thought) = event {
+            if case let .thinking(thought) = event {
                 return thought.count > 10
             }
             return false
@@ -104,7 +113,7 @@ struct StreamOperationsTests {
 
         var results: [String] = []
         for try await result in events.map({ event -> String in
-            if case .thinking(let thought) = event {
+            if case let .thinking(thought) = event {
                 return thought.uppercased()
             }
             return ""
@@ -203,7 +212,7 @@ struct StreamOperationsTests {
             return false
         })
 
-        if case .thinking(let thought) = first {
+        if case let .thinking(thought) = first {
             #expect(thought == "First thinking")
         } else {
             Issue.record("Expected thinking event")
@@ -220,7 +229,7 @@ struct StreamOperationsTests {
 
         let last = try await events.last()
 
-        if case .completed(let result) = last {
+        if case let .completed(result) = last {
             #expect(result.output == "Final")
         } else {
             Issue.record("Expected completed event")
@@ -238,7 +247,7 @@ struct StreamOperationsTests {
         ])
 
         let combined = try await events.reduce("") { acc, event in
-            if case .thinking(let thought) = event {
+            if case let .thinking(thought) = event {
                 return acc + thought
             }
             return acc
@@ -328,7 +337,7 @@ struct StreamOperationsTests {
 
         let collector = SideEffectCollector()
         let stream = events.onEach { event in
-            if case .thinking(let thought) = event {
+            if case let .thinking(thought) = event {
                 Task { await collector.append(thought) }
             }
         }
@@ -451,6 +460,8 @@ func makeTestResult(_ output: String) -> AgentResult {
         metadata: [:]
     )
 }
+
+// MARK: - TestStreamError
 
 enum TestStreamError: Error {
     case intentionalFailure

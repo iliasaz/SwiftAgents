@@ -22,13 +22,12 @@ import Foundation
 /// let result = try await agent.run("What is 2+2?")
 /// ```
 public actor MockInferenceProvider: InferenceProvider {
+    // MARK: Public
+
     // MARK: - Configurable Behavior
 
     /// Responses to return in sequence. Each call to `generate` consumes one response.
     public var responses: [String] = []
-
-    /// Current index in the responses array.
-    private var responseIndex = 0
 
     /// Error to throw on the next call. Set to nil to proceed normally.
     public var errorToThrow: Error?
@@ -50,6 +49,16 @@ public actor MockInferenceProvider: InferenceProvider {
     /// Recorded tool call generations for verification.
     public private(set) var toolCallCalls: [(prompt: String, tools: [ToolDefinition], options: InferenceOptions)] = []
 
+    /// Gets the number of generate calls made.
+    public var generateCallCount: Int {
+        generateCalls.count
+    }
+
+    /// Gets the last generate call, if any.
+    public var lastGenerateCall: (prompt: String, options: InferenceOptions)? {
+        generateCalls.last
+    }
+
     // MARK: - Initialization
 
     /// Creates a new mock inference provider.
@@ -66,17 +75,17 @@ public actor MockInferenceProvider: InferenceProvider {
     /// Sets the responses to return in sequence.
     public func setResponses(_ responses: [String]) {
         self.responses = responses
-        self.responseIndex = 0
+        responseIndex = 0
     }
 
     /// Sets an error to throw on the next call.
     public func setError(_ error: Error?) {
-        self.errorToThrow = error
+        errorToThrow = error
     }
 
     /// Sets the response delay.
     public func setDelay(_ delay: Duration) {
-        self.responseDelay = delay
+        responseDelay = delay
     }
 
     // MARK: - InferenceProvider Implementation
@@ -101,7 +110,7 @@ public actor MockInferenceProvider: InferenceProvider {
         return defaultResponse
     }
 
-    nonisolated public func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
+    public nonisolated func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -118,10 +127,6 @@ public actor MockInferenceProvider: InferenceProvider {
                 }
             }
         }
-    }
-
-    private func recordStreamCall(prompt: String, options: InferenceOptions) {
-        streamCalls.append((prompt, options))
     }
 
     public func generateWithToolCalls(
@@ -143,16 +148,6 @@ public actor MockInferenceProvider: InferenceProvider {
         streamCalls = []
         toolCallCalls = []
         errorToThrow = nil
-    }
-
-    /// Gets the number of generate calls made.
-    public var generateCallCount: Int {
-        generateCalls.count
-    }
-
-    /// Gets the last generate call, if any.
-    public var lastGenerateCall: (prompt: String, options: InferenceOptions)? {
-        generateCalls.last
     }
 
     /// Configures the mock for a simple ReAct sequence.
@@ -179,5 +174,14 @@ public actor MockInferenceProvider: InferenceProvider {
         responses = thoughts.map { "Thought: \($0)" }
         defaultResponse = "Thought: \(thoughts.first ?? "thinking...")"
         responseIndex = 0
+    }
+
+    // MARK: Private
+
+    /// Current index in the responses array.
+    private var responseIndex = 0
+
+    private func recordStreamCall(prompt: String, options: InferenceOptions) {
+        streamCalls.append((prompt, options))
     }
 }

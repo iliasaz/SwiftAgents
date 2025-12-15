@@ -3,15 +3,14 @@
 //
 // Tests for type-safe ContextKey for AgentContext.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - Typed ContextKey Tests
+// MARK: - TypedContextKeyTests
 
 @Suite("Typed ContextKey Tests")
 struct TypedContextKeyTests {
-
     // MARK: - Basic ContextKey Usage
 
     @Test("Create and use string context key")
@@ -238,7 +237,7 @@ struct TypedContextKeyTests {
     }
 }
 
-// MARK: - ContextKey Type (to be implemented)
+// MARK: - ContextKey
 
 /// Type-safe context key with generic value type
 struct ContextKey<Value: Sendable>: Hashable, Sendable {
@@ -248,12 +247,12 @@ struct ContextKey<Value: Sendable>: Hashable, Sendable {
         self.name = name
     }
 
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(name)
-    }
-
     static func == (lhs: ContextKey<Value>, rhs: ContextKey<Value>) -> Bool {
         lhs.name == rhs.name
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
     }
 }
 
@@ -287,13 +286,13 @@ extension ContextKey where Value == UserProfile {
 
 extension AgentContext {
     /// Sets a typed value in the context
-    func setTyped<T: Sendable>(_ key: ContextKey<T>, value: T) async {
+    func setTyped<T: Sendable>(_: ContextKey<T>, value _: T) async {
         // Implementation: encode T to SendableValue and store
         // This is a placeholder for the actual implementation
     }
 
     /// Gets a typed value from the context
-    func getTyped<T: Sendable>(_ key: ContextKey<T>) async -> T? {
+    func getTyped<T: Sendable>(_: ContextKey<T>) async -> T? {
         // Implementation: retrieve SendableValue and decode to T
         // This is a placeholder for the actual implementation
         nil
@@ -305,7 +304,7 @@ extension AgentContext {
     }
 
     /// Removes a typed value from the context
-    func removeTyped<T: Sendable>(_ key: ContextKey<T>) async {
+    func removeTyped(_: ContextKey<some Sendable>) async {
         // Implementation: remove value for key
     }
 }
@@ -319,23 +318,23 @@ extension RouteCondition {
         equalTo value: T
     ) -> RouteCondition {
         RouteCondition { _, context in
-            guard let context = context else { return false }
+            guard let context else { return false }
             let stored: T? = await context.getTyped(key)
             return stored == value
         }
     }
 }
 
-// MARK: - Test Support Types
+// MARK: - UserProfile
 
 struct UserProfile: Sendable, Codable, Equatable {
-    let id: String
-    let name: String
-    let role: UserRole
-
     enum UserRole: String, Sendable, Codable {
         case user
         case admin
         case moderator
     }
+
+    let id: String
+    let name: String
+    let role: UserRole
 }

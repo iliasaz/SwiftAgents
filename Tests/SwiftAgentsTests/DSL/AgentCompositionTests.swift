@@ -3,15 +3,14 @@
 //
 // Tests for agent composition operators (+, >>>, |).
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - Agent Composition Tests
+// MARK: - AgentCompositionTests
 
 @Suite("Agent Composition Operator Tests")
 struct AgentCompositionTests {
-
     // MARK: - Parallel Composition (+)
 
     @Test("Parallel composition with + operator")
@@ -277,19 +276,18 @@ func | (lhs: any Agent, rhs: any Agent) -> ConditionalRouter {
     ConditionalRouter(primary: lhs, fallback: rhs)
 }
 
-// MARK: - Composition Types (to be implemented)
+// MARK: - ParallelComposition
 
 /// Parallel composition of agents
 actor ParallelComposition: Agent {
+    // MARK: Internal
+
     nonisolated let tools: [any Tool] = []
     nonisolated let instructions: String = "Parallel composition"
     nonisolated let configuration: AgentConfiguration = .default
+
     nonisolated var memory: (any AgentMemory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
-
-    private let agents: [any Agent]
-    private var mergeStrategy: ParallelMergeStrategy = .firstSuccess
-    private var errorHandling: ErrorHandlingStrategy = .failFast
 
     init(agents: [any Agent]) {
         self.agents = agents
@@ -333,37 +331,46 @@ actor ParallelComposition: Agent {
         }
     }
 
+    nonisolated func withMergeStrategy(_: ParallelMergeStrategy) -> ParallelComposition {
+        self
+    }
+
+    nonisolated func withErrorHandling(_: ErrorHandlingStrategy) -> ParallelComposition {
+        self
+    }
+
+    // MARK: Private
+
+    private let agents: [any Agent]
+    private var mergeStrategy: ParallelMergeStrategy = .firstSuccess
+    private var errorHandling: ErrorHandlingStrategy = .failFast
+
     private func mergeResults(_ results: [AgentResult]) -> AgentResult {
-        let combinedOutput = results.map { $0.output }.joined(separator: "\n")
+        let combinedOutput = results.map(\.output).joined(separator: "\n")
         return AgentResult(
             output: combinedOutput,
-            toolCalls: results.flatMap { $0.toolCalls },
-            toolResults: results.flatMap { $0.toolResults },
-            iterationCount: results.map { $0.iterationCount }.max() ?? 1,
-            duration: results.map { $0.duration }.max() ?? .zero,
+            toolCalls: results.flatMap(\.toolCalls),
+            toolResults: results.flatMap(\.toolResults),
+            iterationCount: results.map(\.iterationCount).max() ?? 1,
+            duration: results.map(\.duration).max() ?? .zero,
             tokenUsage: nil,
             metadata: [:]
         )
     }
-
-    nonisolated func withMergeStrategy(_ strategy: ParallelMergeStrategy) -> ParallelComposition {
-        self
-    }
-
-    nonisolated func withErrorHandling(_ strategy: ErrorHandlingStrategy) -> ParallelComposition {
-        self
-    }
 }
+
+// MARK: - SequentialComposition
 
 /// Sequential composition of agents
 actor SequentialComposition: Agent {
+    // MARK: Internal
+
     nonisolated let tools: [any Tool] = []
     nonisolated let instructions: String = "Sequential composition"
     nonisolated let configuration: AgentConfiguration = .default
+
     nonisolated var memory: (any AgentMemory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
-
-    private let agents: [any Agent]
 
     init(agents: [any Agent]) {
         self.agents = agents
@@ -401,18 +408,24 @@ actor SequentialComposition: Agent {
             await agent.cancel()
         }
     }
+
+    // MARK: Private
+
+    private let agents: [any Agent]
 }
+
+// MARK: - ConditionalRouter
 
 /// Conditional router with fallback
 actor ConditionalRouter: Agent {
+    // MARK: Internal
+
     nonisolated let tools: [any Tool] = []
     nonisolated let instructions: String = "Conditional router"
     nonisolated let configuration: AgentConfiguration = .default
+
     nonisolated var memory: (any AgentMemory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
-
-    private let primary: any Agent
-    private let fallback: any Agent
 
     init(primary: any Agent, fallback: any Agent) {
         self.primary = primary
@@ -445,16 +458,23 @@ actor ConditionalRouter: Agent {
         await primary.cancel()
         await fallback.cancel()
     }
+
+    // MARK: Private
+
+    private let primary: any Agent
+    private let fallback: any Agent
 }
 
-// MARK: - Supporting Types
+// MARK: - ParallelMergeStrategy
 
 enum ParallelMergeStrategy {
     case firstSuccess
     case all
     case concatenate(separator: String)
-    case custom((([AgentResult]) -> AgentResult))
+    case custom(([AgentResult]) -> AgentResult)
 }
+
+// MARK: - ErrorHandlingStrategy
 
 enum ErrorHandlingStrategy {
     case failFast
@@ -462,19 +482,22 @@ enum ErrorHandlingStrategy {
     case collectErrors
 }
 
+// MARK: - EmptyAgent
+
 /// Empty agent (identity for parallel composition)
 struct EmptyAgent: Agent {
     let tools: [any Tool] = []
     let instructions: String = ""
     let configuration: AgentConfiguration = .default
+
     var memory: (any AgentMemory)? { nil }
     var inferenceProvider: (any InferenceProvider)? { nil }
 
-    func run(_ input: String) async throws -> AgentResult {
+    func run(_: String) async throws -> AgentResult {
         AgentResult(output: "", toolCalls: [], toolResults: [], iterationCount: 0, duration: .zero, tokenUsage: nil, metadata: [:])
     }
 
-    func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    func stream(_: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             continuation.finish()
         }

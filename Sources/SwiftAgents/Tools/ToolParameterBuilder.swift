@@ -47,7 +47,7 @@ public struct ToolParameterBuilder {
 
     /// Builds a parameter array from an array of parameters.
     public static func buildBlock(_ components: [ToolParameter]...) -> [ToolParameter] {
-        components.flatMap { $0 }
+        components.flatMap(\.self)
     }
 
     /// Builds a parameter array from an optional parameter.
@@ -67,7 +67,7 @@ public struct ToolParameterBuilder {
 
     /// Builds a parameter array from a for-in loop.
     public static func buildArray(_ components: [[ToolParameter]]) -> [ToolParameter] {
-        components.flatMap { $0 }
+        components.flatMap(\.self)
     }
 
     /// Converts a single parameter to an array.
@@ -260,7 +260,7 @@ public struct ToolArrayBuilder {
 
     /// Builds a tool array from arrays of tools.
     public static func buildBlock(_ components: [any Tool]...) -> [any Tool] {
-        components.flatMap { $0 }
+        components.flatMap(\.self)
     }
 
     /// Builds a tool array from an optional tool.
@@ -280,7 +280,7 @@ public struct ToolArrayBuilder {
 
     /// Builds a tool array from a for-in loop.
     public static func buildArray(_ components: [[any Tool]]) -> [any Tool] {
-        components.flatMap { $0 }
+        components.flatMap(\.self)
     }
 
     /// Converts a single tool to an array.

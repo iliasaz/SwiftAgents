@@ -5,6 +5,8 @@
 
 import Foundation
 
+// MARK: - InferenceProviderSummarizer
+
 /// LLM-based summarizer using any `InferenceProvider`.
 ///
 /// Works on all platforms - use for server deployments where
@@ -33,9 +35,11 @@ import Foundation
 /// )
 /// ```
 public actor InferenceProviderSummarizer: Summarizer {
-    private let provider: any InferenceProvider
-    private let systemPrompt: String
-    private let temperature: Double
+    // MARK: Public
+
+    public var isAvailable: Bool {
+        get async { true }
+    }
 
     /// Creates a new inference provider-based summarizer.
     ///
@@ -87,19 +91,21 @@ public actor InferenceProviderSummarizer: Summarizer {
         return trimmed
     }
 
-    public var isAvailable: Bool {
-        get async { true }
-    }
+    // MARK: Private
+
+    private let provider: any InferenceProvider
+    private let systemPrompt: String
+    private let temperature: Double
 }
 
 // MARK: - Convenience Extensions
 
-extension InferenceProviderSummarizer {
+public extension InferenceProviderSummarizer {
     /// Creates a summarizer optimized for conversation summaries.
     ///
     /// - Parameter provider: The inference provider to use.
     /// - Returns: A summarizer configured for conversation summarization.
-    public static func conversationSummarizer(
+    static func conversationSummarizer(
         provider: any InferenceProvider
     ) -> InferenceProviderSummarizer {
         InferenceProviderSummarizer(
@@ -121,7 +127,7 @@ extension InferenceProviderSummarizer {
     ///
     /// - Parameter provider: The inference provider to use.
     /// - Returns: A summarizer configured for reasoning trace summarization.
-    public static func reasoningSummarizer(
+    static func reasoningSummarizer(
         provider: any InferenceProvider
     ) -> InferenceProviderSummarizer {
         InferenceProviderSummarizer(

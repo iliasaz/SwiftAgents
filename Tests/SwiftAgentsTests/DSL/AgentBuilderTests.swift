@@ -3,15 +3,14 @@
 //
 // Tests for AgentBuilder DSL for declarative agent construction.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
 // MARK: - AgentBuilder Tests
 
 @Suite("AgentBuilder DSL Tests")
 struct AgentBuilderTests {
-
     // MARK: - Basic Agent Building
 
     @Test("Build agent with instructions")
@@ -48,7 +47,7 @@ struct AgentBuilderTests {
         }
 
         #expect(agent.tools.count == 3)
-        #expect(agent.tools.map { $0.name } == ["calculator", "weather", "search"])
+        #expect(agent.tools.map(\.name) == ["calculator", "weather", "search"])
     }
 
     @Test("Build agent with memory")
@@ -145,19 +144,19 @@ struct AgentBuilderTests {
     // MARK: - Tools Array Building
 
     #if canImport(Darwin)
-    @Test("Tools block builds array of tools")
-    func toolsBlockBuildsArray() async throws {
-        let agent = ReActAgent {
-            Instructions("Multi-tool agent.")
-            Tools {
-                CalculatorTool()
-                DateTimeTool()
-                StringTool()
+        @Test("Tools block builds array of tools")
+        func toolsBlockBuildsArray() async throws {
+            let agent = ReActAgent {
+                Instructions("Multi-tool agent.")
+                Tools {
+                    CalculatorTool()
+                    DateTimeTool()
+                    StringTool()
+                }
             }
-        }
 
-        #expect(agent.tools.count == 3)
-    }
+            #expect(agent.tools.count == 3)
+        }
     #endif
 
     @Test("Tools block with loop")
@@ -174,7 +173,7 @@ struct AgentBuilderTests {
         }
 
         #expect(agent.tools.count == 3)
-        #expect(agent.tools.map { $0.name } == ["a", "b", "c"])
+        #expect(agent.tools.map(\.name) == ["a", "b", "c"])
     }
 
     // MARK: - Memory Configuration

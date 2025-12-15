@@ -30,7 +30,7 @@ import Foundation
 /// let memory = PersistentMemory(backend: backend)
 /// ```
 public actor PersistentMemory: AgentMemory {
-    private let backend: any PersistentMemoryBackend
+    // MARK: Public
 
     /// The conversation ID for this memory instance.
     public let conversationId: String
@@ -40,6 +40,27 @@ public actor PersistentMemory: AgentMemory {
 
     /// Token estimator for context formatting.
     public let tokenEstimator: any TokenEstimator
+
+    public var count: Int {
+        get async {
+            do {
+                return try await backend.messageCount(conversationId: conversationId)
+            } catch {
+                return 0
+            }
+        }
+    }
+
+    public var isEmpty: Bool {
+        get async {
+            do {
+                let messageCount = try await backend.messageCount(conversationId: conversationId)
+                return messageCount == 0
+            } catch {
+                return true
+            }
+        }
+    }
 
     /// Creates a new persistent memory.
     ///
@@ -74,7 +95,7 @@ public actor PersistentMemory: AgentMemory {
         }
     }
 
-    public func getContext(for query: String, tokenLimit: Int) async -> String {
+    public func getContext(for _: String, tokenLimit: Int) async -> String {
         let messages = await getAllMessages()
         return formatMessagesForContext(
             messages,
@@ -97,27 +118,6 @@ public actor PersistentMemory: AgentMemory {
             try await backend.deleteMessages(conversationId: conversationId)
         } catch {
             Log.memory.error("PersistentMemory: Failed to clear messages: \(error.localizedDescription)")
-        }
-    }
-
-    public var count: Int {
-        get async {
-            do {
-                return try await backend.messageCount(conversationId: conversationId)
-            } catch {
-                return 0
-            }
-        }
-    }
-
-    public var isEmpty: Bool {
-        get async {
-            do {
-                let messageCount = try await backend.messageCount(conversationId: conversationId)
-                return messageCount == 0
-            } catch {
-                return true
-            }
         }
     }
 
@@ -153,6 +153,10 @@ public actor PersistentMemory: AgentMemory {
             Log.memory.error("PersistentMemory: Failed to store messages: \(error.localizedDescription)")
         }
     }
+
+    // MARK: Private
+
+    private let backend: any PersistentMemoryBackend
 
     // MARK: - Private Helpers
 

@@ -47,7 +47,7 @@ public func --> (lhs: SequentialChain, rhs: any Agent) -> SequentialChain {
     )
 }
 
-// MARK: - Output Transformer
+// MARK: - OutputTransformer
 
 /// A transformer that modifies agent output before passing to the next agent.
 ///
@@ -61,7 +61,29 @@ public func --> (lhs: SequentialChain, rhs: any Agent) -> SequentialChain {
 /// let configured = chain.withTransformer(after: 0, .withMetadata)
 /// ```
 public struct OutputTransformer: Sendable {
-    private let transform: @Sendable (AgentResult) -> String
+    // MARK: Public
+
+    // MARK: - Predefined Transformers
+
+    /// Passthrough transformer - uses the agent output directly.
+    public static let passthrough = OutputTransformer { result in
+        result.output
+    }
+
+    /// Metadata transformer - includes tool calls and iteration count.
+    public static let withMetadata = OutputTransformer { result in
+        var output = result.output
+
+        if !result.toolCalls.isEmpty {
+            output += "\n\nTools used: \(result.toolCalls.map(\.toolName).joined(separator: ", "))"
+        }
+
+        if result.iterationCount > 1 {
+            output += "\n\nIterations: \(result.iterationCount)"
+        }
+
+        return output
+    }
 
     /// Creates a new output transformer.
     ///
@@ -78,30 +100,12 @@ public struct OutputTransformer: Sendable {
         transform(result)
     }
 
-    // MARK: - Predefined Transformers
+    // MARK: Private
 
-    /// Passthrough transformer - uses the agent output directly.
-    public static let passthrough = OutputTransformer { result in
-        result.output
-    }
-
-    /// Metadata transformer - includes tool calls and iteration count.
-    public static let withMetadata = OutputTransformer { result in
-        var output = result.output
-
-        if !result.toolCalls.isEmpty {
-            output += "\n\nTools used: \(result.toolCalls.map { $0.toolName }.joined(separator: ", "))"
-        }
-
-        if result.iterationCount > 1 {
-            output += "\n\nIterations: \(result.iterationCount)"
-        }
-
-        return output
-    }
+    private let transform: @Sendable (AgentResult) -> String
 }
 
-// MARK: - Sequential Chain
+// MARK: - SequentialChain
 
 /// A sequential chain that executes agents one after another.
 ///
@@ -121,42 +125,31 @@ public struct OutputTransformer: Sendable {
 /// let configured = chain.withTransformer(after: 0, .withMetadata)
 /// ```
 public actor SequentialChain: Agent {
-    // MARK: - Agent Protocol Properties (nonisolated)
-
-    /// Tools available to this chain (always empty - agents have their own tools).
-    nonisolated public var tools: [any Tool] { [] }
-
-    /// Instructions describing this sequential chain.
-    nonisolated public var instructions: String {
-        "Sequential chain executing \(chainedAgents.count) agents in order"
-    }
+    // MARK: Public
 
     /// Configuration for the chain execution.
-    nonisolated public let configuration: AgentConfiguration
-
-    /// Memory system (chains don't maintain their own memory).
-    nonisolated public var memory: (any AgentMemory)? { nil }
-
-    /// Inference provider (chains don't use inference directly).
-    nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
+    public nonisolated let configuration: AgentConfiguration
 
     // MARK: - Chain Properties (nonisolated)
 
     /// The agents in execution order.
-    nonisolated public let chainedAgents: [any Agent]
+    public nonisolated let chainedAgents: [any Agent]
 
-    // MARK: - Internal Properties (nonisolated)
+    // MARK: - Agent Protocol Properties (nonisolated)
 
-    /// Transformers to apply between agents (index -> transformer).
-    nonisolated internal let transformers: [Int: OutputTransformer]
+    /// Tools available to this chain (always empty - agents have their own tools).
+    public nonisolated var tools: [any Tool] { [] }
 
-    // MARK: - Private State
+    /// Instructions describing this sequential chain.
+    public nonisolated var instructions: String {
+        "Sequential chain executing \(chainedAgents.count) agents in order"
+    }
 
-    /// Shared context for the chain execution.
-    private var context: AgentContext?
+    /// Memory system (chains don't maintain their own memory).
+    public nonisolated var memory: (any AgentMemory)? { nil }
 
-    /// Whether execution has been cancelled.
-    private var isCancelled: Bool = false
+    /// Inference provider (chains don't use inference directly).
+    public nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Initialization
 
@@ -171,7 +164,7 @@ public actor SequentialChain: Agent {
         configuration: AgentConfiguration = .default,
         transformers: [Int: OutputTransformer] = [:]
     ) {
-        self.chainedAgents = agents
+        chainedAgents = agents
         self.configuration = configuration
         self.transformers = transformers
     }
@@ -192,7 +185,7 @@ public actor SequentialChain: Agent {
     ///     .withTransformer(after: 0, .withMetadata)
     ///     .withTransformer(after: 1, .passthrough)
     /// ```
-    nonisolated public func withTransformer(after index: Int, _ transformer: OutputTransformer) -> SequentialChain {
+    public nonisolated func withTransformer(after index: Int, _ transformer: OutputTransformer) -> SequentialChain {
         var newTransformers = transformers
         newTransformers[index] = transformer
         return SequentialChain(
@@ -280,7 +273,7 @@ public actor SequentialChain: Agent {
     ///
     /// - Parameter input: The initial input for the first agent.
     /// - Returns: An async stream of agent events.
-    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -308,7 +301,7 @@ public actor SequentialChain: Agent {
                             continuation.yield(event)
 
                             // Capture the result when completed
-                            if case .completed(let result) = event {
+                            if case let .completed(result) = event {
                                 agentResult = result
                             }
                         }
@@ -354,12 +347,29 @@ public actor SequentialChain: Agent {
     public func getContext() -> AgentContext? {
         context
     }
+
+    // MARK: Internal
+
+    // MARK: - Internal Properties (nonisolated)
+
+    /// Transformers to apply between agents (index -> transformer).
+    nonisolated let transformers: [Int: OutputTransformer]
+
+    // MARK: Private
+
+    // MARK: - Private State
+
+    /// Shared context for the chain execution.
+    private var context: AgentContext?
+
+    /// Whether execution has been cancelled.
+    private var isCancelled: Bool = false
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension SequentialChain: CustomStringConvertible {
-    nonisolated public var description: String {
+    public nonisolated var description: String {
         "SequentialChain(\(chainedAgents.count) agents)"
     }
 }

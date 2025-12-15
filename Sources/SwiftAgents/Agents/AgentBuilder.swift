@@ -5,14 +5,14 @@
 
 import Foundation
 
-// MARK: - AgentComponent Protocol
+// MARK: - AgentComponent
 
 /// Marker protocol for agent builder components.
 ///
 /// Components conforming to this protocol can be used within the `AgentBuilder` DSL.
 public protocol AgentComponent {}
 
-// MARK: - Component Types
+// MARK: - Instructions
 
 /// Instructions component for defining agent behavior.
 ///
@@ -34,6 +34,8 @@ public struct Instructions: AgentComponent {
     }
 }
 
+// MARK: - Tools
+
 /// Tools container component for providing agent capabilities.
 ///
 /// Example:
@@ -54,7 +56,7 @@ public struct Tools: AgentComponent {
     ///
     /// - Parameter content: A closure that builds the tool array.
     public init(@ToolArrayBuilder _ content: () -> [any Tool]) {
-        self.tools = content()
+        tools = content()
     }
 
     /// Creates a tools container from an array.
@@ -64,6 +66,8 @@ public struct Tools: AgentComponent {
         self.tools = tools
     }
 }
+
+// MARK: - AgentMemoryComponent
 
 /// Memory component for agent context management.
 ///
@@ -89,6 +93,8 @@ public struct AgentMemoryComponent: AgentComponent {
 /// Type alias for cleaner DSL syntax.
 public typealias Memory = AgentMemoryComponent
 
+// MARK: - Configuration
+
 /// Configuration component for agent settings.
 ///
 /// Example:
@@ -109,6 +115,8 @@ public struct Configuration: AgentComponent {
         self.configuration = configuration
     }
 }
+
+// MARK: - InferenceProviderComponent
 
 /// Inference provider component for custom model backends.
 ///
@@ -158,6 +166,8 @@ public struct InferenceProviderComponent: AgentComponent {
 /// ```
 @resultBuilder
 public struct AgentBuilder {
+    // MARK: Public
+
     /// The aggregated components from the builder.
     public struct Components {
         var instructions: String?
@@ -216,6 +226,8 @@ public struct AgentBuilder {
         return result
     }
 
+    // MARK: Private
+
     /// Merges a component into the aggregated result.
     private static func merge(_ component: AgentComponent, into result: inout Components) {
         switch component {
@@ -237,7 +249,7 @@ public struct AgentBuilder {
 
 // MARK: - ReActAgent DSL Extension
 
-extension ReActAgent {
+public extension ReActAgent {
     /// Creates a ReActAgent using the declarative builder DSL.
     ///
     /// Example:
@@ -257,7 +269,7 @@ extension ReActAgent {
     /// ```
     ///
     /// - Parameter content: A closure that builds the agent components.
-    public init(@AgentBuilder _ content: () -> AgentBuilder.Components) {
+    init(@AgentBuilder _ content: () -> AgentBuilder.Components) {
         let components = content()
         self.init(
             tools: components.tools,

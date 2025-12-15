@@ -6,7 +6,7 @@
 
 import Foundation
 
-// MARK: - Console Tracer
+// MARK: - ConsoleTracer
 
 /// A console tracer that outputs formatted trace events to the terminal.
 ///
@@ -19,7 +19,8 @@ import Foundation
 ///
 /// ## Features
 ///
-/// - **Color Coding**: Events are colored based on severity (trace=gray, debug=cyan, info=green, warning=yellow, error=red, critical=magenta)
+/// - **Color Coding**: Events are colored based on severity (trace=gray, debug=cyan, info=green, warning=yellow,
+/// error=red, critical=magenta)
 /// - **Filtering**: Only events at or above `minimumLevel` are displayed
 /// - **Timestamps**: Optional ISO8601 timestamps with configurable formatting
 /// - **Source Location**: Shows file:line information when enabled
@@ -42,20 +43,7 @@ import Foundation
 /// // Output: [2024-12-12T10:30:45Z] [INFO] agentStart agent=MyAgent Agent started
 /// ```
 public actor ConsoleTracer: AgentTracer {
-    /// The minimum event level to display. Events below this level are filtered out.
-    private let minimumLevel: EventLevel
-
-    /// Whether to colorize output using ANSI escape codes.
-    private let colorized: Bool
-
-    /// Whether to include timestamps in output.
-    private let includeTimestamp: Bool
-
-    /// Whether to include source location (file:line) in output.
-    private let includeSource: Bool
-
-    /// The date formatter used for timestamps.
-    private let dateFormatter: ISO8601DateFormatter
+    // MARK: Public
 
     /// Creates a console tracer with the specified configuration.
     ///
@@ -76,8 +64,8 @@ public actor ConsoleTracer: AgentTracer {
         self.includeSource = includeSource
 
         // Configure ISO8601 date formatter
-        self.dateFormatter = ISO8601DateFormatter()
-        self.dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     }
 
     public func trace(_ event: TraceEvent) async {
@@ -139,6 +127,23 @@ public actor ConsoleTracer: AgentTracer {
         }
     }
 
+    // MARK: Private
+
+    /// The minimum event level to display. Events below this level are filtered out.
+    private let minimumLevel: EventLevel
+
+    /// Whether to colorize output using ANSI escape codes.
+    private let colorized: Bool
+
+    /// Whether to include timestamps in output.
+    private let includeTimestamp: Bool
+
+    /// Whether to include source location (file:line) in output.
+    private let includeSource: Bool
+
+    /// The date formatter used for timestamps.
+    private let dateFormatter: ISO8601DateFormatter
+
     // MARK: - Formatting Helpers
 
     /// Formats the event level with color coding.
@@ -147,20 +152,19 @@ public actor ConsoleTracer: AgentTracer {
 
         guard colorized else { return text }
 
-        let colorCode: String
-        switch level {
+        let colorCode = switch level {
         case .trace:
-            colorCode = "\u{001B}[37m" // gray
+            "\u{001B}[37m" // gray
         case .debug:
-            colorCode = "\u{001B}[36m" // cyan
+            "\u{001B}[36m" // cyan
         case .info:
-            colorCode = "\u{001B}[32m" // green
+            "\u{001B}[32m" // green
         case .warning:
-            colorCode = "\u{001B}[33m" // yellow
+            "\u{001B}[33m" // yellow
         case .error:
-            colorCode = "\u{001B}[31m" // red
+            "\u{001B}[31m" // red
         case .critical:
-            colorCode = "\u{001B}[35m" // magenta
+            "\u{001B}[35m" // magenta
         }
 
         let resetCode = "\u{001B}[0m"
@@ -169,38 +173,37 @@ public actor ConsoleTracer: AgentTracer {
 
     /// Formats the event kind with emoji indicators.
     private func formatKind(_ kind: EventKind) -> String {
-        let emoji: String
-        switch kind {
+        let emoji = switch kind {
         case .agentStart:
-            emoji = "▶️"
+            "▶️"
         case .agentComplete:
-            emoji = "✅"
+            "✅"
         case .agentError:
-            emoji = "❌"
+            "❌"
         case .agentCancelled:
-            emoji = "⏹️"
+            "⏹️"
         case .toolCall:
-            emoji = "🔧"
+            "🔧"
         case .toolResult:
-            emoji = "📦"
+            "📦"
         case .toolError:
-            emoji = "⚠️"
+            "⚠️"
         case .thought:
-            emoji = "💭"
+            "💭"
         case .decision:
-            emoji = "🎯"
+            "🎯"
         case .plan:
-            emoji = "📋"
+            "📋"
         case .memoryRead:
-            emoji = "📖"
+            "📖"
         case .memoryWrite:
-            emoji = "💾"
+            "💾"
         case .checkpoint:
-            emoji = "🏁"
+            "🏁"
         case .metric:
-            emoji = "📊"
+            "📊"
         case .custom:
-            emoji = "📌"
+            "📌"
         }
 
         return "\(emoji) \(kind.rawValue)"
@@ -238,7 +241,7 @@ public actor ConsoleTracer: AgentTracer {
     }
 }
 
-// MARK: - Pretty Console Tracer
+// MARK: - PrettyConsoleTracer
 
 /// An enhanced console tracer with emoji-rich output for better visual scanning.
 ///
@@ -271,20 +274,7 @@ public actor ConsoleTracer: AgentTracer {
 ///     search_time: 1.2
 /// ```
 public actor PrettyConsoleTracer: AgentTracer {
-    /// The minimum event level to display. Events below this level are filtered out.
-    private let minimumLevel: EventLevel
-
-    /// Whether to colorize output using ANSI escape codes.
-    private let colorized: Bool
-
-    /// Whether to include timestamps in output.
-    private let includeTimestamp: Bool
-
-    /// Whether to include source location (file:line) in output.
-    private let includeSource: Bool
-
-    /// The date formatter used for timestamps.
-    private let dateFormatter: ISO8601DateFormatter
+    // MARK: Public
 
     /// Creates a pretty console tracer with the specified configuration.
     ///
@@ -305,8 +295,8 @@ public actor PrettyConsoleTracer: AgentTracer {
         self.includeSource = includeSource
 
         // Configure ISO8601 date formatter
-        self.dateFormatter = ISO8601DateFormatter()
-        self.dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     }
 
     public func trace(_ event: TraceEvent) async {
@@ -332,6 +322,23 @@ public actor PrettyConsoleTracer: AgentTracer {
         // Add blank line for visual separation
         Log.tracing.debug("")
     }
+
+    // MARK: Private
+
+    /// The minimum event level to display. Events below this level are filtered out.
+    private let minimumLevel: EventLevel
+
+    /// Whether to colorize output using ANSI escape codes.
+    private let colorized: Bool
+
+    /// Whether to include timestamps in output.
+    private let includeTimestamp: Bool
+
+    /// Whether to include source location (file:line) in output.
+    private let includeSource: Bool
+
+    /// The date formatter used for timestamps.
+    private let dateFormatter: ISO8601DateFormatter
 
     // MARK: - Pretty Formatting
 
@@ -398,40 +405,38 @@ public actor PrettyConsoleTracer: AgentTracer {
 
     /// Formats the event level with color coding.
     private func formatLevel(_ level: EventLevel) -> String {
-        let emoji: String
-        switch level {
+        let emoji = switch level {
         case .trace:
-            emoji = "🔍"
+            "🔍"
         case .debug:
-            emoji = "🐛"
+            "🐛"
         case .info:
-            emoji = "ℹ️"
+            "ℹ️"
         case .warning:
-            emoji = "⚠️"
+            "⚠️"
         case .error:
-            emoji = "❗"
+            "❗"
         case .critical:
-            emoji = "🚨"
+            "🚨"
         }
 
         let text = "[\(level.description)]"
 
         guard colorized else { return "\(emoji) \(text)" }
 
-        let colorCode: String
-        switch level {
+        let colorCode = switch level {
         case .trace:
-            colorCode = "\u{001B}[37m" // gray
+            "\u{001B}[37m" // gray
         case .debug:
-            colorCode = "\u{001B}[36m" // cyan
+            "\u{001B}[36m" // cyan
         case .info:
-            colorCode = "\u{001B}[32m" // green
+            "\u{001B}[32m" // green
         case .warning:
-            colorCode = "\u{001B}[33m" // yellow
+            "\u{001B}[33m" // yellow
         case .error:
-            colorCode = "\u{001B}[31m" // red
+            "\u{001B}[31m" // red
         case .critical:
-            colorCode = "\u{001B}[35m" // magenta
+            "\u{001B}[35m" // magenta
         }
 
         let resetCode = "\u{001B}[0m"

@@ -109,23 +109,22 @@ public func |? (lhs: any Agent, rhs: any Agent) -> ConditionalFallback {
 /// let result = try await configured.run("What's happening today?")
 /// ```
 public actor ParallelComposition: Agent {
+    // MARK: Public
+
     // MARK: - Agent Protocol (nonisolated)
 
-    nonisolated public let tools: [any Tool] = []
-    nonisolated public let instructions: String = "Parallel composition of agents"
-    nonisolated public let configuration: AgentConfiguration
-    nonisolated public var memory: (any AgentMemory)? { nil }
-    nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
+    public nonisolated let tools: [any Tool] = []
+    public nonisolated let instructions: String = "Parallel composition of agents"
+    public nonisolated let configuration: AgentConfiguration
 
     // MARK: - Properties (nonisolated)
 
-    nonisolated public let parallelAgents: [any Agent]
-    nonisolated public let currentMergeStrategy: ParallelMergeStrategy
-    nonisolated public let currentErrorHandling: ParallelErrorHandling
+    public nonisolated let parallelAgents: [any Agent]
+    public nonisolated let currentMergeStrategy: ParallelMergeStrategy
+    public nonisolated let currentErrorHandling: ParallelErrorHandling
 
-    // MARK: - Private State
-
-    private var isCancelled = false
+    public nonisolated var memory: (any AgentMemory)? { nil }
+    public nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Initialization
 
@@ -136,16 +135,16 @@ public actor ParallelComposition: Agent {
         errorHandling: ParallelErrorHandling = .failFast,
         configuration: AgentConfiguration = .default
     ) {
-        self.parallelAgents = agents
-        self.currentMergeStrategy = mergeStrategy
-        self.currentErrorHandling = errorHandling
+        parallelAgents = agents
+        currentMergeStrategy = mergeStrategy
+        currentErrorHandling = errorHandling
         self.configuration = configuration
     }
 
     // MARK: - Configuration
 
     /// Returns a new composition with the specified merge strategy.
-    nonisolated public func withMergeStrategy(_ strategy: ParallelMergeStrategy) -> ParallelComposition {
+    public nonisolated func withMergeStrategy(_ strategy: ParallelMergeStrategy) -> ParallelComposition {
         ParallelComposition(
             agents: parallelAgents,
             mergeStrategy: strategy,
@@ -155,7 +154,7 @@ public actor ParallelComposition: Agent {
     }
 
     /// Returns a new composition with the specified error handling.
-    nonisolated public func withErrorHandling(_ handling: ParallelErrorHandling) -> ParallelComposition {
+    public nonisolated func withErrorHandling(_ handling: ParallelErrorHandling) -> ParallelComposition {
         ParallelComposition(
             agents: parallelAgents,
             mergeStrategy: currentMergeStrategy,
@@ -194,9 +193,9 @@ public actor ParallelComposition: Agent {
 
             for await result in group {
                 switch result {
-                case .success(let agentResult):
+                case let .success(agentResult):
                     results.append(agentResult)
-                case .failure(let error):
+                case let .failure(error):
                     errors.append(error)
                     if case .failFast = currentErrorHandling {
                         group.cancelAll()
@@ -212,7 +211,7 @@ public actor ParallelComposition: Agent {
                 throw firstError
             }
         case .continueOnPartialFailure:
-            if results.isEmpty && !errors.isEmpty {
+            if results.isEmpty, !errors.isEmpty {
                 throw errors.first!
             }
         case .collectErrors:
@@ -235,7 +234,7 @@ public actor ParallelComposition: Agent {
         )
     }
 
-    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -262,13 +261,19 @@ public actor ParallelComposition: Agent {
         }
     }
 
+    // MARK: Private
+
+    // MARK: - Private State
+
+    private var isCancelled = false
+
     // MARK: - Private Methods
 
     private func mergeResults(_ results: [AgentResult], errors: [Error]) -> AgentResult {
         let outputs: [String]
-        let allToolCalls = results.flatMap { $0.toolCalls }
-        let allToolResults = results.flatMap { $0.toolResults }
-        let maxIterations = results.map { $0.iterationCount }.max() ?? 0
+        let allToolCalls = results.flatMap(\.toolCalls)
+        let allToolResults = results.flatMap(\.toolResults)
+        let maxIterations = results.map(\.iterationCount).max() ?? 0
 
         switch currentMergeStrategy {
         case .firstSuccess:
@@ -276,10 +281,10 @@ public actor ParallelComposition: Agent {
         case .lastSuccess:
             outputs = results.last.map { [$0.output] } ?? []
         case .all:
-            outputs = results.map { $0.output }
-        case .concatenate(let separator):
-            outputs = [results.map { $0.output }.joined(separator: separator)]
-        case .custom(let merger):
+            outputs = results.map(\.output)
+        case let .concatenate(separator):
+            outputs = [results.map(\.output).joined(separator: separator)]
+        case let .custom(merger):
             outputs = [merger(results)]
         }
 
@@ -313,22 +318,21 @@ public actor ParallelComposition: Agent {
 /// let result = try await sequence.run("Process data")
 /// ```
 public actor AgentSequence: Agent {
+    // MARK: Public
+
     // MARK: - Agent Protocol (nonisolated)
 
-    nonisolated public let tools: [any Tool] = []
-    nonisolated public let instructions: String = "Sequential composition of agents"
-    nonisolated public let configuration: AgentConfiguration
-    nonisolated public var memory: (any AgentMemory)? { nil }
-    nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
+    public nonisolated let tools: [any Tool] = []
+    public nonisolated let instructions: String = "Sequential composition of agents"
+    public nonisolated let configuration: AgentConfiguration
 
     // MARK: - Properties (nonisolated)
 
-    nonisolated public let sequentialAgents: [any Agent]
-    nonisolated public let currentTransformers: [Int: OutputTransformer]
+    public nonisolated let sequentialAgents: [any Agent]
+    public nonisolated let currentTransformers: [Int: OutputTransformer]
 
-    // MARK: - Private State
-
-    private var isCancelled = false
+    public nonisolated var memory: (any AgentMemory)? { nil }
+    public nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Initialization
 
@@ -337,15 +341,15 @@ public actor AgentSequence: Agent {
         transformers: [Int: OutputTransformer] = [:],
         configuration: AgentConfiguration = .default
     ) {
-        self.sequentialAgents = agents
-        self.currentTransformers = transformers
+        sequentialAgents = agents
+        currentTransformers = transformers
         self.configuration = configuration
     }
 
     // MARK: - Configuration
 
     /// Returns a new sequence with a transformer after the specified index.
-    nonisolated public func withTransformer(
+    public nonisolated func withTransformer(
         after index: Int,
         _ transformer: OutputTransformer
     ) -> AgentSequence {
@@ -406,7 +410,7 @@ public actor AgentSequence: Agent {
         )
     }
 
-    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -432,6 +436,12 @@ public actor AgentSequence: Agent {
             await agent.cancel()
         }
     }
+
+    // MARK: Private
+
+    // MARK: - Private State
+
+    private var isCancelled = false
 }
 
 // MARK: - ConditionalFallback
@@ -444,19 +454,16 @@ public actor AgentSequence: Agent {
 /// let result = try await resilient.run("Handle request")
 /// ```
 public actor ConditionalFallback: Agent {
+    // MARK: Public
+
     // MARK: - Agent Protocol (nonisolated)
 
-    nonisolated public let tools: [any Tool] = []
-    nonisolated public let instructions: String = "Conditional fallback agent"
-    nonisolated public let configuration: AgentConfiguration
-    nonisolated public var memory: (any AgentMemory)? { nil }
-    nonisolated public var inferenceProvider: (any InferenceProvider)? { nil }
+    public nonisolated let tools: [any Tool] = []
+    public nonisolated let instructions: String = "Conditional fallback agent"
+    public nonisolated let configuration: AgentConfiguration
 
-    // MARK: - Properties
-
-    private let primary: any Agent
-    private let fallback: any Agent
-    private var isCancelled = false
+    public nonisolated var memory: (any AgentMemory)? { nil }
+    public nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
     // MARK: - Initialization
 
@@ -507,7 +514,7 @@ public actor ConditionalFallback: Agent {
         }
     }
 
-    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    public nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -532,9 +539,15 @@ public actor ConditionalFallback: Agent {
         await primary.cancel()
         await fallback.cancel()
     }
+
+    // MARK: Private
+
+    private let primary: any Agent
+    private let fallback: any Agent
+    private var isCancelled = false
 }
 
-// MARK: - Supporting Types
+// MARK: - ParallelMergeStrategy
 
 /// Strategy for merging parallel agent results.
 public enum ParallelMergeStrategy: Sendable {
@@ -553,6 +566,8 @@ public enum ParallelMergeStrategy: Sendable {
     /// Custom merge function.
     case custom(@Sendable ([AgentResult]) -> String)
 }
+
+// MARK: - ParallelErrorHandling
 
 /// Strategy for handling errors in parallel execution.
 public enum ParallelErrorHandling: Sendable {

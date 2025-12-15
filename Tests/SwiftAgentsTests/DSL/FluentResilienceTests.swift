@@ -3,15 +3,14 @@
 //
 // Tests for fluent resilience integration with Agent protocol.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - Fluent Resilience Tests
+// MARK: - FluentResilienceTests
 
 @Suite("Fluent Resilience Tests")
 struct FluentResilienceTests {
-
     // MARK: - withRetry Tests
 
     @Test("withRetry wraps agent with retry policy")
@@ -306,23 +305,24 @@ struct FluentResilienceTests {
     }
 }
 
-// MARK: - Test Support Types
+// MARK: - TestResilienceError
 
 enum TestResilienceError: Error {
     case transient
     case permanent
 }
 
+// MARK: - FailThenSucceedProvider
+
 /// Provider that fails a specified number of times then succeeds
 actor FailThenSucceedProvider: InferenceProvider {
-    private var failCount: Int
-    private var callCount = 0
+    // MARK: Internal
 
     init(failCount: Int) {
         self.failCount = failCount
     }
 
-    func generate(prompt: String, options: InferenceOptions) async throws -> String {
+    func generate(prompt _: String, options _: InferenceOptions) async throws -> String {
         callCount += 1
         if callCount <= failCount {
             throw TestResilienceError.transient
@@ -346,34 +346,43 @@ actor FailThenSucceedProvider: InferenceProvider {
 
     func generateWithToolCalls(
         prompt: String,
-        tools: [ToolDefinition],
+        tools _: [ToolDefinition],
         options: InferenceOptions
     ) async throws -> InferenceResponse {
         let content = try await generate(prompt: prompt, options: options)
         return InferenceResponse(content: content, finishReason: .completed)
     }
+
+    // MARK: Private
+
+    private var failCount: Int
+    private var callCount = 0
 }
+
+// MARK: - AlwaysFailingProvider
 
 /// Provider that always fails
 struct AlwaysFailingProvider: InferenceProvider {
-    func generate(prompt: String, options: InferenceOptions) async throws -> String {
+    func generate(prompt _: String, options _: InferenceOptions) async throws -> String {
         throw TestResilienceError.permanent
     }
 
-    func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
+    func stream(prompt _: String, options _: InferenceOptions) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             continuation.finish(throwing: TestResilienceError.permanent)
         }
     }
 
     func generateWithToolCalls(
-        prompt: String,
-        tools: [ToolDefinition],
-        options: InferenceOptions
+        prompt _: String,
+        tools _: [ToolDefinition],
+        options _: InferenceOptions
     ) async throws -> InferenceResponse {
         throw TestResilienceError.permanent
     }
 }
+
+// MARK: - SlowInferenceProvider
 
 /// Provider that takes a long time to respond
 actor SlowInferenceProvider: InferenceProvider {
@@ -383,7 +392,7 @@ actor SlowInferenceProvider: InferenceProvider {
         self.delay = delay
     }
 
-    func generate(prompt: String, options: InferenceOptions) async throws -> String {
+    func generate(prompt _: String, options _: InferenceOptions) async throws -> String {
         try await Task.sleep(for: delay)
         return "Final Answer: Slow response"
     }
@@ -404,7 +413,7 @@ actor SlowInferenceProvider: InferenceProvider {
 
     func generateWithToolCalls(
         prompt: String,
-        tools: [ToolDefinition],
+        tools _: [ToolDefinition],
         options: InferenceOptions
     ) async throws -> InferenceResponse {
         let content = try await generate(prompt: prompt, options: options)

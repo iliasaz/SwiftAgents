@@ -3,15 +3,14 @@
 //
 // Tests for typed Pipeline operators with generic input/output types.
 
-import Testing
 import Foundation
 @testable import SwiftAgents
+import Testing
 
-// MARK: - Typed Pipeline Tests
+// MARK: - TypedPipelineTests
 
 @Suite("Typed Pipeline Tests")
 struct TypedPipelineTests {
-
     // MARK: - Basic Pipeline Creation
 
     @Test("Create pipeline from closure")
@@ -270,7 +269,7 @@ struct TypedPipelineTests {
     }
 }
 
-// MARK: - Test Support Types
+// MARK: - PipelineTestError
 
 enum PipelineTestError: Error {
     case intentionalFailure
