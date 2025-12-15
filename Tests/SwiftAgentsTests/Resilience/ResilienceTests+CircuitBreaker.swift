@@ -321,7 +321,7 @@ struct CircuitBreakerTests {
 
     // MARK: - HalfOpen Request Limiting Tests
 
-    @Test("HalfOpen state limits concurrent requests", .disabled("Temporarily disabled to isolate CI crash"))
+    @Test("HalfOpen state limits concurrent requests")
     func halfOpenRequestLimit() async throws {
         let breaker = CircuitBreaker(
             name: "test",
