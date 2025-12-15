@@ -111,22 +111,28 @@ public actor MockInferenceProvider: InferenceProvider {
     }
 
     nonisolated public func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    await self.recordStreamCall(prompt: prompt, options: options)
-                    let response = try await self.generate(prompt: prompt, options: options)
-                    // Stream character by character
-                    for char in response {
-                        continuation.yield(String(char))
-                        try await Task.sleep(for: .milliseconds(1))
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
+        let (stream, continuation) = AsyncThrowingStream<String, Error>.makeStream()
+
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                await recordStreamCall(prompt: prompt, options: options)
+                let response = try await generate(prompt: prompt, options: options)
+                // Stream character by character
+                for char in response {
+                    continuation.yield(String(char))
+                    try await Task.sleep(for: .milliseconds(1))
                 }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+
+        return stream
     }
 
     public func generateWithToolCalls(

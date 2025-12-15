@@ -317,13 +317,18 @@ extension AgentContext {
         // For complex types (arrays, dictionaries), use JSON-based decode
         // Only decode() for non-primitive types to avoid JSON serialization errors
         switch sendableValue {
-        case .array, .dictionary:
+        case .array,
+             .dictionary:
             do {
                 return try sendableValue.decode()
             } catch {
                 return nil
             }
-        case .null, .bool, .int, .double, .string:
+        case .bool,
+             .double,
+             .int,
+             .null,
+             .string:
             // Primitive type that didn't match the expected type T
             return nil
         }
@@ -335,7 +340,7 @@ extension AgentContext {
     }
 
     /// Removes a typed value from the context
-    func removeTyped<T: Sendable>(_ key: ContextKey<T>) async {
+    func removeTyped(_ key: ContextKey<some Sendable>) async {
         _ = remove(key.name)
     }
 }

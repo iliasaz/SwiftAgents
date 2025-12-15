@@ -331,17 +331,23 @@ actor FailThenSucceedProvider: InferenceProvider {
     }
 
     nonisolated func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    let result = try await self.generate(prompt: prompt, options: options)
-                    continuation.yield(result)
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+        let (stream, continuation) = AsyncThrowingStream<String, Error>.makeStream()
+
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                let result = try await generate(prompt: prompt, options: options)
+                continuation.yield(result)
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+
+        return stream
     }
 
     func generateWithToolCalls(
@@ -398,17 +404,23 @@ actor SlowInferenceProvider: InferenceProvider {
     }
 
     nonisolated func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    let result = try await self.generate(prompt: prompt, options: options)
-                    continuation.yield(result)
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+        let (stream, continuation) = AsyncThrowingStream<String, Error>.makeStream()
+
+        Task { @Sendable [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            do {
+                let result = try await generate(prompt: prompt, options: options)
+                continuation.yield(result)
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
+
+        return stream
     }
 
     func generateWithToolCalls(

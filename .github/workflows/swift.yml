@@ -47,7 +47,7 @@ jobs:
         run: swift build
 
       - name: Run tests
-        run: swift test --parallel
+        run: swift test --no-parallel
 
   # Linux Build & Test (core features, no SwiftData)
   build-linux:
@@ -82,7 +82,7 @@ jobs:
         run: swift build
 
       - name: Run tests
-        run: swift test --parallel
+        run: swift test --no-parallel
 
   # Code Quality (macOS only - SwiftLint/SwiftFormat)
   code-quality:

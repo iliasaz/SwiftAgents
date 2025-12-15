@@ -301,7 +301,7 @@ actor ParallelComposition: Agent {
             for agent in agents {
                 group.addTask {
                     do {
-                        return .success(try await agent.run(input))
+                        return try await .success(agent.run(input))
                     } catch {
                         return .failure(error)
                     }
