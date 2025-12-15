@@ -260,85 +260,10 @@ struct InferenceOptionsBuilderTests {
     }
 }
 
-// MARK: - InferenceOptions Extensions (to be implemented)
+// MARK: - InferenceOptions Test Extensions
 
 extension InferenceOptions {
-    /// Presets
-    static var creative: InferenceOptions {
-        InferenceOptions(temperature: 1.2, maxTokens: nil, stopSequences: [])
-    }
-
-    static var precise: InferenceOptions {
-        InferenceOptions(temperature: 0.2, maxTokens: nil, stopSequences: [])
-    }
-
-    static var balanced: InferenceOptions {
-        InferenceOptions(temperature: 0.7, maxTokens: nil, stopSequences: [])
-    }
-
-    static var codeGeneration: InferenceOptions {
-        InferenceOptions(temperature: 0.1, maxTokens: 4000, stopSequences: ["```", "###"])
-    }
-
-    // Extended properties (to be added to main source)
-    var topP: Double? { nil }
-    var topK: Int? { nil }
-    var presencePenalty: Double? { nil }
-    var frequencyPenalty: Double? { nil }
-
-    /// Fluent setters
-    func temperature(_ value: Double) -> InferenceOptions {
-        var copy = self
-        copy.temperature = max(0.0, min(2.0, value))
-        return copy
-    }
-
-    func maxTokens(_ value: Int) -> InferenceOptions {
-        var copy = self
-        copy.maxTokens = value > 0 ? value : nil
-        return copy
-    }
-
-    func stopSequences(_ sequences: String...) -> InferenceOptions {
-        var copy = self
-        copy.stopSequences = sequences
-        return copy
-    }
-
-    func addStopSequence(_ sequence: String) -> InferenceOptions {
-        var copy = self
-        copy.stopSequences.append(sequence)
-        return copy
-    }
-
-    func clearStopSequences() -> InferenceOptions {
-        var copy = self
-        copy.stopSequences = []
-        return copy
-    }
-
-    /// Extended fluent methods (require extended properties)
-    func topP(_: Double) -> InferenceOptions {
-        // Would set topP property
-        self
-    }
-
-    func topK(_: Int) -> InferenceOptions {
-        // Would set topK property
-        self
-    }
-
-    func presencePenalty(_: Double) -> InferenceOptions {
-        // Would set presencePenalty property
-        self
-    }
-
-    func frequencyPenalty(_: Double) -> InferenceOptions {
-        // Would set frequencyPenalty property
-        self
-    }
-
-    /// Copy with modifications
+    /// Copy with modifications helper for tests
     func with(_ modifications: (inout InferenceOptions) -> Void) -> InferenceOptions {
         var copy = self
         modifications(&copy)
@@ -391,7 +316,11 @@ class InferenceOptionsBuilder {
         InferenceOptions(
             temperature: temperature,
             maxTokens: maxTokens,
-            stopSequences: stopSequences
+            stopSequences: stopSequences,
+            topP: topP,
+            topK: topK,
+            presencePenalty: presencePenalty,
+            frequencyPenalty: frequencyPenalty
         )
     }
 

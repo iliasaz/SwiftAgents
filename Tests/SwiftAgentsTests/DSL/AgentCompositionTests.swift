@@ -55,7 +55,7 @@ struct AgentCompositionTests {
         let agent1 = ReActAgent(tools: [], instructions: "Agent 1", inferenceProvider: provider1)
         let agent2 = ReActAgent(tools: [], instructions: "Agent 2", inferenceProvider: provider2)
 
-        let parallel = (agent1 + agent2).withMergeStrategy(.concatenate(separator: " | "))
+        let parallel = await (agent1 + agent2).withMergeStrategy(.concatenate(separator: " | "))
 
         let result = try await parallel.run("Test")
 
@@ -237,7 +237,7 @@ struct AgentCompositionTests {
         let success = ReActAgent(tools: [], instructions: "Success", inferenceProvider: successProvider)
         let failing = ReActAgent(tools: [], instructions: "Failing", inferenceProvider: failingProvider)
 
-        let parallel = (success + failing).withErrorHandling(.continueOnPartialFailure)
+        let parallel = await (success + failing).withErrorHandling(.continueOnPartialFailure)
 
         let result = try await parallel.run("Test")
 
@@ -289,25 +289,52 @@ actor ParallelComposition: Agent {
     nonisolated var memory: (any AgentMemory)? { nil }
     nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
-    init(agents: [any Agent]) {
+    init(agents: [any Agent], mergeStrategy: ParallelMergeStrategy = .firstSuccess, errorHandling: ErrorHandlingStrategy = .failFast) {
         self.agents = agents
+        self.mergeStrategy = mergeStrategy
+        self.errorHandling = errorHandling
     }
 
     func run(_ input: String) async throws -> AgentResult {
-        // Run all agents in parallel and merge results
-        try await withThrowingTaskGroup(of: AgentResult.self) { group in
+        // Run all agents in parallel and collect results
+        await withTaskGroup(of: Result<AgentResult, Error>.self) { group in
             for agent in agents {
                 group.addTask {
-                    try await agent.run(input)
+                    do {
+                        return .success(try await agent.run(input))
+                    } catch {
+                        return .failure(error)
+                    }
                 }
             }
 
-            var results: [AgentResult] = []
-            for try await result in group {
-                results.append(result)
+            var successes: [AgentResult] = []
+            var failures: [Error] = []
+
+            for await result in group {
+                switch result {
+                case let .success(agentResult):
+                    successes.append(agentResult)
+                case let .failure(error):
+                    failures.append(error)
+                }
             }
 
-            return mergeResults(results)
+            // Handle based on error handling strategy
+            if successes.isEmpty, let firstError = failures.first {
+                // All failed - create error result
+                return AgentResult(
+                    output: "All agents failed: \(firstError)",
+                    toolCalls: [],
+                    toolResults: [],
+                    iterationCount: 0,
+                    duration: .zero,
+                    tokenUsage: nil,
+                    metadata: [:]
+                )
+            }
+
+            return mergeResults(successes)
         }
     }
 
@@ -331,28 +358,58 @@ actor ParallelComposition: Agent {
         }
     }
 
-    nonisolated func withMergeStrategy(_: ParallelMergeStrategy) -> ParallelComposition {
-        self
+    func withMergeStrategy(_ strategy: ParallelMergeStrategy) -> ParallelComposition {
+        ParallelComposition(agents: agents, mergeStrategy: strategy, errorHandling: errorHandling)
     }
 
-    nonisolated func withErrorHandling(_: ErrorHandlingStrategy) -> ParallelComposition {
-        self
+    func withErrorHandling(_ strategy: ErrorHandlingStrategy) -> ParallelComposition {
+        ParallelComposition(agents: agents, mergeStrategy: mergeStrategy, errorHandling: strategy)
     }
 
     // MARK: Private
 
     private let agents: [any Agent]
-    private var mergeStrategy: ParallelMergeStrategy = .firstSuccess
-    private var errorHandling: ErrorHandlingStrategy = .failFast
+    private let mergeStrategy: ParallelMergeStrategy
+    private let errorHandling: ErrorHandlingStrategy
 
     private func mergeResults(_ results: [AgentResult]) -> AgentResult {
-        let combinedOutput = results.map(\.output).joined(separator: "\n")
+        switch mergeStrategy {
+        case .firstSuccess:
+            // Return first non-empty result (or first if all empty)
+            if let first = results.first(where: { !$0.output.isEmpty }) ?? results.first {
+                return first
+            }
+            return makeEmptyResult()
+        case .all:
+            // Concatenate all results with newline
+            return combineResults(results, separator: "\n")
+        case let .concatenate(separator):
+            return combineResults(results, separator: separator)
+        case let .custom(merger):
+            return merger(results)
+        }
+    }
+
+    private func combineResults(_ results: [AgentResult], separator: String) -> AgentResult {
+        let combinedOutput = results.map(\.output).joined(separator: separator)
         return AgentResult(
             output: combinedOutput,
             toolCalls: results.flatMap(\.toolCalls),
             toolResults: results.flatMap(\.toolResults),
             iterationCount: results.map(\.iterationCount).max() ?? 1,
             duration: results.map(\.duration).max() ?? .zero,
+            tokenUsage: nil,
+            metadata: [:]
+        )
+    }
+
+    private func makeEmptyResult() -> AgentResult {
+        AgentResult(
+            output: "",
+            toolCalls: [],
+            toolResults: [],
+            iterationCount: 0,
+            duration: .zero,
             tokenUsage: nil,
             metadata: [:]
         )
@@ -467,16 +524,16 @@ actor ConditionalRouter: Agent {
 
 // MARK: - ParallelMergeStrategy
 
-enum ParallelMergeStrategy {
+enum ParallelMergeStrategy: Sendable {
     case firstSuccess
     case all
     case concatenate(separator: String)
-    case custom(([AgentResult]) -> AgentResult)
+    case custom(@Sendable ([AgentResult]) -> AgentResult)
 }
 
 // MARK: - ErrorHandlingStrategy
 
-enum ErrorHandlingStrategy {
+enum ErrorHandlingStrategy: Sendable {
     case failFast
     case continueOnPartialFailure
     case collectErrors

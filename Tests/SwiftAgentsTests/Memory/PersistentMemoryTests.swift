@@ -41,11 +41,15 @@ struct PersistentMemoryTests {
         await memory.add(.assistant("Response 2"))
         await memory.add(.user("Message 3"))
 
-        // Should have trimmed to 3 messages
+        // Should have trimmed to 3 messages (oldest 2 removed)
         #expect(await memory.count == 3)
 
         let messages = await memory.getAllMessages()
-        #expect(messages[0].content == "Response 1")
+        // After trimming, the oldest 2 messages (Message 1, Response 1) are removed
+        // Remaining: Message 2, Response 2, Message 3
+        #expect(messages[0].content == "Message 2")
+        #expect(messages[1].content == "Response 2")
+        #expect(messages[2].content == "Message 3")
     }
 
     @Test("Clear removes all messages")

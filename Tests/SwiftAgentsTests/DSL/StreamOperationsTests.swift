@@ -345,6 +345,9 @@ struct StreamOperationsTests {
         // Consume the stream
         for try await _ in stream {}
 
+        // Allow spawned tasks to complete
+        try await Task.sleep(for: .milliseconds(50))
+
         let sideEffects = await collector.getAll()
         #expect(sideEffects == ["A", "B"])
     }
@@ -366,6 +369,9 @@ struct StreamOperationsTests {
 
         // Consume the stream
         for try await _ in stream {}
+
+        // Allow spawned task to complete
+        try await Task.sleep(for: .milliseconds(50))
 
         let wasCompleted = await completionFlag.isComplete()
         #expect(wasCompleted)

@@ -282,38 +282,69 @@ extension ContextKey where Value == UserProfile {
     static let userProfile = ContextKey("user_profile")
 }
 
-// MARK: - AgentContext Extensions (to be implemented)
+// MARK: - AgentContext Extensions
 
 extension AgentContext {
     /// Sets a typed value in the context
-    func setTyped<T: Sendable>(_: ContextKey<T>, value _: T) async {
-        // Implementation: encode T to SendableValue and store
-        // This is a placeholder for the actual implementation
+    func setTyped<T: Sendable & Codable>(_ key: ContextKey<T>, value: T) async {
+        do {
+            let sendableValue = try SendableValue(encoding: value)
+            set(key.name, value: sendableValue)
+        } catch {
+            // Log or handle encoding error if needed
+        }
     }
 
     /// Gets a typed value from the context
-    func getTyped<T: Sendable>(_: ContextKey<T>) async -> T? {
-        // Implementation: retrieve SendableValue and decode to T
-        // This is a placeholder for the actual implementation
-        nil
+    func getTyped<T: Sendable & Codable>(_ key: ContextKey<T>) async -> T? {
+        guard let sendableValue = get(key.name) else { return nil }
+
+        // Handle primitive types directly to avoid JSON serialization issues
+        // with top-level primitives
+        if let boolValue = sendableValue.boolValue, let result = boolValue as? T {
+            return result
+        }
+        if let intValue = sendableValue.intValue, let result = intValue as? T {
+            return result
+        }
+        if let stringValue = sendableValue.stringValue, let result = stringValue as? T {
+            return result
+        }
+        if let doubleValue = sendableValue.doubleValue, let result = doubleValue as? T {
+            return result
+        }
+
+        // For complex types (arrays, dictionaries), use JSON-based decode
+        // Only decode() for non-primitive types to avoid JSON serialization errors
+        switch sendableValue {
+        case .array, .dictionary:
+            do {
+                return try sendableValue.decode()
+            } catch {
+                return nil
+            }
+        case .null, .bool, .int, .double, .string:
+            // Primitive type that didn't match the expected type T
+            return nil
+        }
     }
 
     /// Gets a typed value with a default
-    func getTyped<T: Sendable>(_ key: ContextKey<T>, default defaultValue: T) async -> T {
+    func getTyped<T: Sendable & Codable>(_ key: ContextKey<T>, default defaultValue: T) async -> T {
         await getTyped(key) ?? defaultValue
     }
 
     /// Removes a typed value from the context
-    func removeTyped(_: ContextKey<some Sendable>) async {
-        // Implementation: remove value for key
+    func removeTyped<T: Sendable>(_ key: ContextKey<T>) async {
+        _ = remove(key.name)
     }
 }
 
-// MARK: - RouteCondition Extensions (to be implemented)
+// MARK: - RouteCondition Extensions
 
 extension RouteCondition {
     /// Creates a condition that checks for a typed context value
-    static func contextHasTyped<T: Sendable & Equatable>(
+    static func contextHasTyped<T: Sendable & Codable & Equatable>(
         _ key: ContextKey<T>,
         equalTo value: T
     ) -> RouteCondition {
