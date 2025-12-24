@@ -64,10 +64,10 @@ struct InputGuardrailTests {
         let guardrail = SendableTestGuardrail(name: "Sendable")
         
         // When - pass across async boundary
-        let result = await Task {
+        let result = try await Task {
             try await guardrail.validate("test", context: nil)
         }.value
-        
+
         // Then
         #expect(result.tripwireTriggered == false)
     }
@@ -118,53 +118,79 @@ struct InputGuardrailTests {
     @Test("ClosureInputGuardrail handler receives input")
     func testClosureInputGuardrailReceivesInput() async throws {
         // Given
-        var capturedInput: String?
+        actor InputCapture {
+            var value: String?
+            func set(_ newValue: String) { value = newValue }
+            func get() -> String? { value }
+        }
+
+        let capture = InputCapture()
         let guardrail = ClosureInputGuardrail(name: "CaptureGuardrail") { input, context in
-            capturedInput = input
+            await capture.set(input)
             return .passed()
         }
-        
+
         // When
         _ = try await guardrail.validate("test input", context: nil)
-        
+
         // Then
+        let capturedInput = await capture.get()
         #expect(capturedInput == "test input")
     }
     
     @Test("ClosureInputGuardrail handler receives context")
     func testClosureInputGuardrailReceivesContext() async throws {
         // Given
-        let testContext = AgentContext()
-        await testContext.set(.originalInput, value: .string("original"))
-        
-        var capturedContext: AgentContext?
+        let testContext = AgentContext(input: "test")
+        await testContext.set("customKey", value: .string("original"))
+
+        actor ContextCapture {
+            var value: AgentContext?
+            func set(_ newValue: AgentContext?) { value = newValue }
+            func get() -> AgentContext? { value }
+        }
+
+        let capture = ContextCapture()
         let guardrail = ClosureInputGuardrail(name: "ContextGuardrail") { input, context in
-            capturedContext = context
+            await capture.set(context)
             return .passed()
         }
-        
+
         // When
         _ = try await guardrail.validate("test", context: testContext)
-        
+
         // Then
+        let capturedContext = await capture.get()
         #expect(capturedContext != nil)
-        let originalInput = await capturedContext?.get(.originalInput)
-        #expect(originalInput?.stringValue == "original")
+        let customValue = await capturedContext?.get("customKey")
+        #expect(customValue?.stringValue == "original")
     }
     
     @Test("ClosureInputGuardrail works with nil context")
     func testClosureInputGuardrailWithNilContext() async throws {
         // Given
-        var receivedContext: AgentContext?
+        actor ContextCapture {
+            var value: AgentContext?
+            var wasSet = false
+            func set(_ newValue: AgentContext?) {
+                value = newValue
+                wasSet = true
+            }
+            func get() -> AgentContext? { value }
+            func didSet() -> Bool { wasSet }
+        }
+
+        let capture = ContextCapture()
         let guardrail = ClosureInputGuardrail(name: "NilContextGuardrail") { input, context in
-            receivedContext = context
+            await capture.set(context)
             return .passed()
         }
-        
+
         // When
         let result = try await guardrail.validate("test", context: nil)
-        
+
         // Then
+        let receivedContext = await capture.get()
         #expect(receivedContext == nil)
         #expect(result.tripwireTriggered == false)
     }
@@ -410,25 +436,24 @@ struct InputGuardrailTests {
     @Test("Guardrail works with actor-isolated AgentContext")
     func testGuardrailWithActorContext() async throws {
         // Given
-        let context = AgentContext()
-        await context.set(.originalInput, value: .string("test input"))
-        
+        let context = AgentContext(input: "test input")
+
         let guardrail = ClosureInputGuardrail(name: "ContextGuardrail") { input, context in
             guard let ctx = context else {
                 return .tripwire(message: "No context provided")
             }
-            
+
             let originalInput = await ctx.get(.originalInput)
             if originalInput?.stringValue == "test input" {
                 return .passed(message: "Context verified")
             }
-            
+
             return .tripwire(message: "Context mismatch")
         }
-        
+
         // When
         let result = try await guardrail.validate("input", context: context)
-        
+
         // Then
         #expect(result.tripwireTriggered == false)
         #expect(result.message == "Context verified")
@@ -505,16 +530,23 @@ struct InputGuardrailTests {
     @Test("ClosureInputGuardrail handles empty input")
     func testClosureInputGuardrailEmptyInput() async throws {
         // Given
-        var capturedInput: String?
+        actor InputCapture {
+            var value: String?
+            func set(_ newValue: String) { value = newValue }
+            func get() -> String? { value }
+        }
+
+        let capture = InputCapture()
         let guardrail = ClosureInputGuardrail(name: "EmptyInputGuardrail") { input, context in
-            capturedInput = input
+            await capture.set(input)
             return input.isEmpty ? .tripwire(message: "Empty input") : .passed()
         }
-        
+
         // When
         let result = try await guardrail.validate("", context: nil)
-        
+
         // Then
+        let capturedInput = await capture.get()
         #expect(capturedInput == "")
         #expect(result.tripwireTriggered == true)
         #expect(result.message == "Empty input")
@@ -540,16 +572,24 @@ struct InputGuardrailTests {
     func testClosureInputGuardrailSpecialCharacters() async throws {
         // Given
         let specialInput = "Test with émojis 🎉 and symbols !@#$%^&*()"
-        var capturedInput: String?
+
+        actor InputCapture {
+            var value: String?
+            func set(_ newValue: String) { value = newValue }
+            func get() -> String? { value }
+        }
+
+        let capture = InputCapture()
         let guardrail = ClosureInputGuardrail(name: "SpecialCharGuardrail") { input, context in
-            capturedInput = input
+            await capture.set(input)
             return .passed()
         }
-        
+
         // When
         _ = try await guardrail.validate(specialInput, context: nil)
-        
+
         // Then
+        let capturedInput = await capture.get()
         #expect(capturedInput == specialInput)
     }
 }

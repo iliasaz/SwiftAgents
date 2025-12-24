@@ -39,6 +39,8 @@ public actor ReActAgent: Agent {
     nonisolated public let memory: (any Memory)?
     nonisolated public let inferenceProvider: (any InferenceProvider)?
     nonisolated public let tracer: (any Tracer)?
+    nonisolated public let inputGuardrails: [any InputGuardrail]
+    nonisolated public let outputGuardrails: [any OutputGuardrail]
 
     // MARK: - Initialization
 
@@ -50,13 +52,17 @@ public actor ReActAgent: Agent {
     ///   - memory: Optional memory system. Default: nil
     ///   - inferenceProvider: Optional custom inference provider. Default: nil
     ///   - tracer: Optional tracer for observability. Default: nil
+    ///   - inputGuardrails: Input validation guardrails. Default: []
+    ///   - outputGuardrails: Output validation guardrails. Default: []
     public init(
         tools: [any Tool] = [],
         instructions: String = "",
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,
         inferenceProvider: (any InferenceProvider)? = nil,
-        tracer: (any Tracer)? = nil
+        tracer: (any Tracer)? = nil,
+        inputGuardrails: [any InputGuardrail] = [],
+        outputGuardrails: [any OutputGuardrail] = []
     ) {
         self.tools = tools
         self.instructions = instructions
@@ -64,6 +70,8 @@ public actor ReActAgent: Agent {
         self.memory = memory
         self.inferenceProvider = inferenceProvider
         self.tracer = tracer
+        self.inputGuardrails = inputGuardrails
+        self.outputGuardrails = outputGuardrails
         toolRegistry = ToolRegistry(tools: tools)
     }
 
@@ -72,11 +80,15 @@ public actor ReActAgent: Agent {
     /// Executes the agent with the given input and returns a result.
     /// - Parameter input: The user's input/query.
     /// - Returns: The result of the agent's execution.
-    /// - Throws: `AgentError` if execution fails.
+    /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
     public func run(_ input: String) async throws -> AgentResult {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
+
+        // Run input guardrails
+        let runner = GuardrailRunner()
+        _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
         isCancelled = false
         let resultBuilder = AgentResult.Builder()
@@ -100,7 +112,12 @@ public actor ReActAgent: Agent {
             await mem.add(.assistant(output))
         }
 
-        return resultBuilder.build()
+        let result = resultBuilder.build()
+
+        // Run output guardrails before returning
+        _ = try await runner.runOutputGuardrails(outputGuardrails, output: result.output, agent: self, context: nil)
+
+        return result
     }
 
     /// Streams the agent's execution, yielding events as they occur.
@@ -519,6 +536,8 @@ public extension ReActAgent {
             self.memory = nil
             self.inferenceProvider = nil
             self.tracer = nil
+            self.inputGuardrails = []
+            self.outputGuardrails = []
         }
 
         /// Sets the tools.
@@ -592,6 +611,42 @@ public extension ReActAgent {
             return copy
         }
 
+        /// Sets the input guardrails.
+        /// - Parameter guardrails: The input guardrails to use.
+        /// - Returns: A new builder with the updated guardrails.
+        public func inputGuardrails(_ guardrails: [any InputGuardrail]) -> Builder {
+            var copy = self
+            copy.inputGuardrails = guardrails
+            return copy
+        }
+
+        /// Adds an input guardrail.
+        /// - Parameter guardrail: The guardrail to add.
+        /// - Returns: A new builder with the guardrail added.
+        public func addInputGuardrail(_ guardrail: any InputGuardrail) -> Builder {
+            var copy = self
+            copy.inputGuardrails.append(guardrail)
+            return copy
+        }
+
+        /// Sets the output guardrails.
+        /// - Parameter guardrails: The output guardrails to use.
+        /// - Returns: A new builder with the updated guardrails.
+        public func outputGuardrails(_ guardrails: [any OutputGuardrail]) -> Builder {
+            var copy = self
+            copy.outputGuardrails = guardrails
+            return copy
+        }
+
+        /// Adds an output guardrail.
+        /// - Parameter guardrail: The guardrail to add.
+        /// - Returns: A new builder with the guardrail added.
+        public func addOutputGuardrail(_ guardrail: any OutputGuardrail) -> Builder {
+            var copy = self
+            copy.outputGuardrails.append(guardrail)
+            return copy
+        }
+
         /// Builds the agent.
         /// - Returns: A new ReActAgent instance.
         public func build() -> ReActAgent {
@@ -601,7 +656,9 @@ public extension ReActAgent {
                 configuration: configuration,
                 memory: memory,
                 inferenceProvider: inferenceProvider,
-                tracer: tracer
+                tracer: tracer,
+                inputGuardrails: inputGuardrails,
+                outputGuardrails: outputGuardrails
             )
         }
 
@@ -613,5 +670,7 @@ public extension ReActAgent {
         private var memory: (any Memory)?
         private var inferenceProvider: (any InferenceProvider)?
         private var tracer: (any Tracer)?
+        private var inputGuardrails: [any InputGuardrail]
+        private var outputGuardrails: [any OutputGuardrail]
     }
 }

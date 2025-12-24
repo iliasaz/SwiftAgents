@@ -13,6 +13,12 @@ import Foundation
 /// and maintain context across interactions. This protocol defines the
 /// minimal interface that all agent implementations must support.
 ///
+/// ## Guardrails
+///
+/// Agents can have input and output guardrails for validation and safety:
+/// - Input guardrails validate user input before processing
+/// - Output guardrails validate agent responses before returning
+///
 /// Example:
 /// ```swift
 /// let agent = ReActAgent(
@@ -41,10 +47,22 @@ public protocol Agent: Sendable {
     /// Optional tracer for observability.
     nonisolated var tracer: (any Tracer)? { get }
 
+    /// Input guardrails that validate user input before processing.
+    ///
+    /// Guardrails are executed in order. If any guardrail triggers a tripwire,
+    /// execution stops and throws `GuardrailError.inputTripwireTriggered`.
+    nonisolated var inputGuardrails: [any InputGuardrail] { get }
+
+    /// Output guardrails that validate agent responses before returning.
+    ///
+    /// Guardrails are executed in order after the agent produces output.
+    /// If any guardrail triggers a tripwire, throws `GuardrailError.outputTripwireTriggered`.
+    nonisolated var outputGuardrails: [any OutputGuardrail] { get }
+
     /// Executes the agent with the given input and returns a result.
     /// - Parameter input: The user's input/query.
     /// - Returns: The result of the agent's execution.
-    /// - Throws: `AgentError` if execution fails.
+    /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
     func run(_ input: String) async throws -> AgentResult
 
     /// Streams the agent's execution, yielding events as they occur.
@@ -67,6 +85,12 @@ public extension Agent {
 
     /// Default tracer implementation (none).
     nonisolated var tracer: (any Tracer)? { nil }
+
+    /// Default input guardrails (none).
+    nonisolated var inputGuardrails: [any InputGuardrail] { [] }
+
+    /// Default output guardrails (none).
+    nonisolated var outputGuardrails: [any OutputGuardrail] { [] }
 }
 
 // MARK: - InferenceProvider

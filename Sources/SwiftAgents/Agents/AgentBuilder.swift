@@ -159,6 +159,66 @@ public struct TracerComponent: AgentComponent {
     }
 }
 
+// MARK: - InputGuardrailsComponent
+
+/// Input guardrails component for validating agent inputs.
+///
+/// Example:
+/// ```swift
+/// let agent = ReActAgent {
+///     Instructions("Secure agent.")
+///     InputGuardrailsComponent(sensitiveDataGuardrail, piiDetectionGuardrail)
+/// }
+/// ```
+public struct InputGuardrailsComponent: AgentComponent {
+    /// The input guardrails.
+    public let guardrails: [any InputGuardrail]
+
+    /// Creates an input guardrails component from an array.
+    ///
+    /// - Parameter guardrails: The input guardrails to apply.
+    public init(_ guardrails: [any InputGuardrail]) {
+        self.guardrails = guardrails
+    }
+
+    /// Creates an input guardrails component from variadic parameters.
+    ///
+    /// - Parameter guardrails: The input guardrails to apply.
+    public init(_ guardrails: any InputGuardrail...) {
+        self.guardrails = guardrails
+    }
+}
+
+// MARK: - OutputGuardrailsComponent
+
+/// Output guardrails component for validating agent outputs.
+///
+/// Example:
+/// ```swift
+/// let agent = ReActAgent {
+///     Instructions("Safe agent.")
+///     OutputGuardrailsComponent(profanityFilterGuardrail, toxicityGuardrail)
+/// }
+/// ```
+public struct OutputGuardrailsComponent: AgentComponent {
+    /// The output guardrails.
+    public let guardrails: [any OutputGuardrail]
+
+    /// Creates an output guardrails component from an array.
+    ///
+    /// - Parameter guardrails: The output guardrails to apply.
+    public init(_ guardrails: [any OutputGuardrail]) {
+        self.guardrails = guardrails
+    }
+
+    /// Creates an output guardrails component from variadic parameters.
+    ///
+    /// - Parameter guardrails: The output guardrails to apply.
+    public init(_ guardrails: any OutputGuardrail...) {
+        self.guardrails = guardrails
+    }
+}
+
 // MARK: - AgentBuilder
 
 /// A result builder for creating agents declaratively.
@@ -196,6 +256,8 @@ public struct AgentBuilder {
         var configuration: AgentConfiguration?
         var inferenceProvider: (any InferenceProvider)?
         var tracer: (any Tracer)?
+        var inputGuardrails: [any InputGuardrail] = []
+        var outputGuardrails: [any OutputGuardrail] = []
     }
 
     /// Builds a block of components.
@@ -219,6 +281,8 @@ public struct AgentBuilder {
             if let tracer = component.tracer {
                 result.tracer = tracer
             }
+            result.inputGuardrails.append(contentsOf: component.inputGuardrails)
+            result.outputGuardrails.append(contentsOf: component.outputGuardrails)
         }
         return result
     }
@@ -267,6 +331,10 @@ public struct AgentBuilder {
             result.inferenceProvider = provider.provider
         case let tracerComponent as TracerComponent:
             result.tracer = tracerComponent.tracer
+        case let inputGuardrails as InputGuardrailsComponent:
+            result.inputGuardrails.append(contentsOf: inputGuardrails.guardrails)
+        case let outputGuardrails as OutputGuardrailsComponent:
+            result.outputGuardrails.append(contentsOf: outputGuardrails.guardrails)
         default:
             break
         }

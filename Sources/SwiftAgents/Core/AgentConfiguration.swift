@@ -26,6 +26,12 @@ public struct AgentConfiguration: Sendable, Equatable {
     /// Default configuration with sensible defaults.
     public static let `default` = AgentConfiguration()
 
+    // MARK: - Identity
+
+    /// The name of the agent for identification and logging.
+    /// Default: "Agent"
+    public var name: String
+
     // MARK: - Iteration Limits
 
     /// Maximum number of reasoning iterations before stopping.
@@ -72,6 +78,7 @@ public struct AgentConfiguration: Sendable, Equatable {
 
     /// Creates a new agent configuration.
     /// - Parameters:
+    ///   - name: The agent name for identification. Default: "Agent"
     ///   - maxIterations: Maximum reasoning iterations. Default: 10
     ///   - timeout: Maximum execution time. Default: 60 seconds
     ///   - temperature: Model temperature (0.0-2.0). Default: 1.0
@@ -82,6 +89,7 @@ public struct AgentConfiguration: Sendable, Equatable {
     ///   - stopOnToolError: Stop on first tool error. Default: false
     ///   - includeReasoning: Include reasoning in events. Default: true
     public init(
+        name: String = "Agent",
         maxIterations: Int = 10,
         timeout: Duration = .seconds(60),
         temperature: Double = 1.0,
@@ -92,6 +100,7 @@ public struct AgentConfiguration: Sendable, Equatable {
         stopOnToolError: Bool = false,
         includeReasoning: Bool = true
     ) {
+        self.name = name
         self.maxIterations = maxIterations
         self.timeout = timeout
         self.temperature = temperature
@@ -111,6 +120,7 @@ extension AgentConfiguration: CustomStringConvertible {
     public var description: String {
         """
         AgentConfiguration(
+            name: "\(name)",
             maxIterations: \(maxIterations),
             timeout: \(timeout),
             temperature: \(temperature),

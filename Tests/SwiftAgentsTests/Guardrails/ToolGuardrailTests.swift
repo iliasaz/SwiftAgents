@@ -434,14 +434,14 @@ struct MockAgentForGuardrails: Agent {
     func run(_ input: String) async throws -> AgentResult {
         AgentResult(
             output: "Mock response to: \(input)",
-            metadata: [:],
-            conversationHistory: []
+            metadata: [:]
         )
     }
-    
+
     nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
-            continuation.yield(.completed(output: "Mock response to: \(input)"))
+            let result = AgentResult(output: "Mock response to: \(input)", metadata: [:])
+            continuation.yield(.completed(result: result))
             continuation.finish()
         }
     }

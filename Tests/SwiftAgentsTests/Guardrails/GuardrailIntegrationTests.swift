@@ -71,7 +71,7 @@ struct GuardrailIntegrationTests {
         )
         
         // Input guardrail that always passes
-        let inputGuardrail = ClosureInputGuardrail(name: "always_pass") { input, _, _ in
+        let inputGuardrail = ClosureInputGuardrail(name: "always_pass") { input, context in
             .passed(message: "Input validation successful")
         }
         
@@ -80,11 +80,10 @@ struct GuardrailIntegrationTests {
         // For now, we test the guardrail runner directly
         let context = AgentContext(input: "Test query")
         let runner = GuardrailRunner()
-        
+
         let results = try await runner.runInputGuardrails(
             [inputGuardrail],
             input: "Test query",
-            agent: agent,
             context: context
         )
         
@@ -101,7 +100,7 @@ struct GuardrailIntegrationTests {
         let agent = await MockGuardrailAgent(name: "TestAgent")
         
         // Input guardrail that triggers on sensitive content
-        let inputGuardrail = ClosureInputGuardrail(name: "sensitive_data_blocker") { input, _, _ in
+        let inputGuardrail = ClosureInputGuardrail(name: "sensitive_data_blocker") { input, context in
             if input.contains("SSN:") || input.contains("password") {
                 return .tripwire(
                     message: "Sensitive data detected in input",
@@ -117,13 +116,12 @@ struct GuardrailIntegrationTests {
         // When: Running guardrail with sensitive input
         let context = AgentContext(input: "Please process SSN: 123-45-6789")
         let runner = GuardrailRunner()
-        
+
         // Then: Guardrail throws error
         await #expect(throws: GuardrailError.self) {
             try await runner.runInputGuardrails(
                 [inputGuardrail],
                 input: "Please process SSN: 123-45-6789",
-                agent: agent,
                 context: context
             )
         }
@@ -133,37 +131,44 @@ struct GuardrailIntegrationTests {
     func testAgentWithMultipleInputGuardrails() async throws {
         // Given: An agent with multiple input guardrails
         let agent = await MockGuardrailAgent(name: "TestAgent")
-        var executionOrder: [String] = []
-        
-        let guardrail1 = ClosureInputGuardrail(name: "length_check", runInParallel: false) { input, _, _ in
-            executionOrder.append("length_check")
+
+        actor ExecutionTracker {
+            private var order: [String] = []
+            func append(_ name: String) { order.append(name) }
+            func getOrder() -> [String] { order }
+        }
+
+        let tracker = ExecutionTracker()
+
+        let guardrail1 = ClosureInputGuardrail(name: "length_check") { input, context in
+            await tracker.append("length_check")
             if input.count < 5 {
                 return .tripwire(message: "Input too short")
             }
             return .passed()
         }
-        
-        let guardrail2 = ClosureInputGuardrail(name: "format_check", runInParallel: false) { input, _, _ in
-            executionOrder.append("format_check")
+
+        let guardrail2 = ClosureInputGuardrail(name: "format_check") { input, context in
+            await tracker.append("format_check")
             if !input.contains("?") {
                 return .tripwire(message: "Input must be a question")
             }
             return .passed()
         }
-        
+
         // When: Running with valid input
         let context = AgentContext(input: "What is the weather?")
         let runner = GuardrailRunner()
-        
+
         let results = try await runner.runInputGuardrails(
             [guardrail1, guardrail2],
             input: "What is the weather?",
-            agent: agent,
             context: context
         )
         
         // Then: Both guardrails execute in order
         #expect(results.count == 2)
+        let executionOrder = await tracker.getOrder()
         #expect(executionOrder == ["length_check", "format_check"])
         #expect(results[0].guardrailName == "length_check")
         #expect(results[1].guardrailName == "format_check")
@@ -179,8 +184,8 @@ struct GuardrailIntegrationTests {
             responseHandler: { _ in "Safe output content" }
         )
         
-        let outputGuardrail = ClosureOutputGuardrail(name: "output_validator") { output, _, _ in
-            if output.output.contains("Safe") {
+        let outputGuardrail = ClosureOutputGuardrail(name: "output_validator") { output, agent, context in
+            if output.contains("Safe") {
                 return .passed(message: "Output validated successfully")
             }
             return .tripwire(message: "Output validation failed")
@@ -190,10 +195,10 @@ struct GuardrailIntegrationTests {
         let result = try await agent.run("test input")
         let context = AgentContext(input: "test input")
         let runner = GuardrailRunner()
-        
+
         let guardrailResults = try await runner.runOutputGuardrails(
             [outputGuardrail],
-            output: result,
+            output: result.output,
             agent: agent,
             context: context
         )
@@ -212,10 +217,10 @@ struct GuardrailIntegrationTests {
             responseHandler: { _ in "This content contains profanity: damn" }
         )
         
-        let outputGuardrail = ClosureOutputGuardrail(name: "profanity_filter") { output, _, _ in
+        let outputGuardrail = ClosureOutputGuardrail(name: "profanity_filter") { output, agent, context in
             let profaneWords = ["damn", "hell", "crap"]
-            let containsProfanity = profaneWords.contains { output.output.lowercased().contains($0) }
-            
+            let containsProfanity = profaneWords.contains { output.lowercased().contains($0) }
+
             if containsProfanity {
                 return .tripwire(
                     message: "Profanity detected in output",
@@ -232,12 +237,12 @@ struct GuardrailIntegrationTests {
         let result = try await agent.run("test input")
         let context = AgentContext(input: "test input")
         let runner = GuardrailRunner()
-        
+
         // Then: Guardrail throws error
         await #expect(throws: GuardrailError.self) {
             try await runner.runOutputGuardrails(
                 [outputGuardrail],
-                output: result,
+                output: result.output,
                 agent: agent,
                 context: context
             )
@@ -276,7 +281,7 @@ struct GuardrailIntegrationTests {
         let agent = await MockGuardrailAgent(name: "ToolAgent")
         let context = AgentContext(input: "Calculate 2+2")
         let data = ToolGuardrailData(
-            toolName: "calculator",
+            tool: tool,
             arguments: ["expression": .string("2+2")],
             agent: agent,
             context: context
@@ -303,16 +308,16 @@ struct GuardrailIntegrationTests {
             ])
         )
         
-        let toolOutputGuardrail = ClosureToolOutputGuardrail(name: "result_validator") { data in
+        let toolOutputGuardrail = ClosureToolOutputGuardrail(name: "result_validator") { data, output in
             // Validate output structure
-            guard let dict = data.output.dictionaryValue else {
+            guard let dict = output.dictionaryValue else {
                 return .tripwire(message: "Invalid output format")
             }
-            
+
             guard let results = dict["results"]?.arrayValue else {
                 return .tripwire(message: "Missing results array")
             }
-            
+
             // Check for empty results
             if results.isEmpty {
                 return .tripwire(
@@ -320,7 +325,7 @@ struct GuardrailIntegrationTests {
                     outputInfo: .dictionary(["count": .int(0)])
                 )
             }
-            
+
             return .passed(
                 message: "Results validated",
                 outputInfo: .dictionary(["count": .int(results.count)])
@@ -331,16 +336,15 @@ struct GuardrailIntegrationTests {
         let agent = await MockGuardrailAgent(name: "SearchAgent")
         let context = AgentContext(input: "Search for Swift")
         let toolResult = try await tool.execute(arguments: [:])
-        let data = ToolOutputGuardrailData(
-            toolName: "web_search",
+        let data = ToolGuardrailData(
+            tool: tool,
             arguments: [:],
-            output: toolResult,
             agent: agent,
             context: context
         )
-        
+
         let runner = GuardrailRunner()
-        let results = try await runner.runToolOutputGuardrails([toolOutputGuardrail], data: data)
+        let results = try await runner.runToolOutputGuardrails([toolOutputGuardrail], data: data, output: toolResult)
         
         // Then: Guardrail passes with metadata
         #expect(results.count == 1)
@@ -373,42 +377,41 @@ struct GuardrailIntegrationTests {
             }
         )
         
-        let inputGuardrail = ClosureInputGuardrail(name: "input_sanitizer") { input, _, _ in
+        let inputGuardrail = ClosureInputGuardrail(name: "input_sanitizer") { input, context in
             if input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return .tripwire(message: "Empty input not allowed")
             }
             return .passed(message: "Input accepted")
         }
-        
-        let outputGuardrail = ClosureOutputGuardrail(name: "output_length_checker") { output, _, _ in
-            if output.output.count > 1000 {
+
+        let outputGuardrail = ClosureOutputGuardrail(name: "output_length_checker") { output, agent, context in
+            if output.count > 1000 {
                 return .tripwire(
                     message: "Output too long",
-                    outputInfo: .dictionary(["length": .int(output.output.count)])
+                    outputInfo: .dictionary(["length": .int(output.count)])
                 )
             }
             return .passed(message: "Output length acceptable")
         }
-        
+
         // When: Running both guardrails
         let context = AgentContext(input: "Valid input query")
         let runner = GuardrailRunner()
-        
+
         // Input guardrail check
         let inputResults = try await runner.runInputGuardrails(
             [inputGuardrail],
             input: "Valid input query",
-            agent: agent,
             context: context
         )
-        
+
         // Agent execution
         let result = try await agent.run("Valid input query")
-        
+
         // Output guardrail check
         let outputResults = try await runner.runOutputGuardrails(
             [outputGuardrail],
-            output: result,
+            output: result.output,
             agent: agent,
             context: context
         )
@@ -428,36 +431,41 @@ struct GuardrailIntegrationTests {
         await context.set("user_role", value: .string("admin"))
         await context.set("request_count", value: .int(5))
         
-        var capturedContext: AgentContext?
-        let inputGuardrail = ClosureInputGuardrail(name: "role_checker") { input, _, ctx in
-            capturedContext = ctx
-            
+        actor ContextCapture {
+            var value: AgentContext?
+            func set(_ newValue: AgentContext?) { value = newValue }
+            func get() -> AgentContext? { value }
+        }
+        let contextCapture = ContextCapture()
+        let inputGuardrail = ClosureInputGuardrail(name: "role_checker") { input, ctx in
+            await contextCapture.set(ctx)
+
             // Check user role from context
-            guard let role = await ctx.get("user_role")?.stringValue else {
+            guard let role = await ctx?.get("user_role")?.stringValue else {
                 return .tripwire(message: "No user role in context")
             }
-            
+
             if role != "admin" {
                 return .tripwire(message: "Insufficient permissions")
             }
-            
+
             return .passed(
                 message: "Role validated",
                 metadata: ["role": .string(role)]
             )
         }
-        
+
         // When: Running guardrail
         let runner = GuardrailRunner()
         let results = try await runner.runInputGuardrails(
             [inputGuardrail],
             input: "Admin command",
-            agent: agent,
             context: context
         )
         
         // Then: Context is accessible in guardrail
-        #expect(capturedContext != nil)
+        let captured = await contextCapture.get()
+        #expect(captured != nil)
         #expect(results[0].result.tripwireTriggered == false)
         #expect(results[0].result.metadata["role"]?.stringValue == "admin")
     }
@@ -468,7 +476,7 @@ struct GuardrailIntegrationTests {
         let agent = await MockGuardrailAgent(name: "ErrorAgent")
         let context = AgentContext(input: "Test")
         
-        let inputGuardrail = ClosureInputGuardrail(name: "error_trigger") { _, _, _ in
+        let inputGuardrail = ClosureInputGuardrail(name: "error_trigger") { input, context in
             .tripwire(
                 message: "Test error message",
                 outputInfo: .dictionary([
@@ -477,16 +485,15 @@ struct GuardrailIntegrationTests {
                 ])
             )
         }
-        
+
         // When: Running guardrail
         let runner = GuardrailRunner()
-        
+
         // Then: Error is thrown with correct details
         do {
             _ = try await runner.runInputGuardrails(
                 [inputGuardrail],
                 input: "Test input",
-                agent: agent,
                 context: context
             )
             Issue.record("Expected GuardrailError to be thrown")
@@ -521,14 +528,13 @@ struct GuardrailIntegrationTests {
         let inputResults = try await runner.runInputGuardrails(
             [],
             input: "Test input",
-            agent: agent,
             context: context
         )
-        
+
         let result = try await agent.run("Test input")
         let outputResults = try await runner.runOutputGuardrails(
             [],
-            output: result,
+            output: result.output,
             agent: agent,
             context: context
         )
@@ -545,7 +551,7 @@ struct GuardrailIntegrationTests {
         let agent = await MockGuardrailAgent(name: "MetadataAgent")
         let context = AgentContext(input: "Test")
         
-        let inputGuardrail = ClosureInputGuardrail(name: "metadata_setter") { input, _, _ in
+        let inputGuardrail = ClosureInputGuardrail(name: "metadata_setter") { input, context in
             .passed(
                 message: "Validation passed with metadata",
                 metadata: [
@@ -560,13 +566,12 @@ struct GuardrailIntegrationTests {
                 ]
             )
         }
-        
+
         // When: Running guardrail
         let runner = GuardrailRunner()
         let results = try await runner.runInputGuardrails(
             [inputGuardrail],
             input: "Test input",
-            agent: agent,
             context: context
         )
         
@@ -583,25 +588,24 @@ struct GuardrailIntegrationTests {
         // Given: Multiple parallel input guardrails
         let agent = await MockGuardrailAgent(name: "ParallelAgent")
         let context = AgentContext(input: "Test")
-        
+
         let startTime = ContinuousClock.now
-        
-        let slowGuardrail1 = ClosureInputGuardrail(name: "slow1", runInParallel: true) { _, _, _ in
+
+        let slowGuardrail1 = ClosureInputGuardrail(name: "slow1") { input, context in
             try? await Task.sleep(for: .milliseconds(100))
             return .passed(message: "Slow check 1 complete")
         }
-        
-        let slowGuardrail2 = ClosureInputGuardrail(name: "slow2", runInParallel: true) { _, _, _ in
+
+        let slowGuardrail2 = ClosureInputGuardrail(name: "slow2") { input, context in
             try? await Task.sleep(for: .milliseconds(100))
             return .passed(message: "Slow check 2 complete")
         }
-        
-        // When: Running parallel guardrails
-        let runner = GuardrailRunner()
+
+        // When: Running parallel guardrails (using parallel runner configuration)
+        let runner = GuardrailRunner(configuration: .parallel)
         let results = try await runner.runInputGuardrails(
             [slowGuardrail1, slowGuardrail2],
             input: "Test input",
-            agent: agent,
             context: context
         )
         

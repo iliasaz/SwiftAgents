@@ -253,6 +253,8 @@ public actor PlanAndExecuteAgent: Agent {
     nonisolated public let configuration: AgentConfiguration
     nonisolated public let memory: (any Memory)?
     nonisolated public let inferenceProvider: (any InferenceProvider)?
+    nonisolated public let inputGuardrails: [any InputGuardrail]
+    nonisolated public let outputGuardrails: [any OutputGuardrail]
 
     // MARK: - Plan-and-Execute Specific Configuration
 
@@ -280,6 +282,8 @@ public actor PlanAndExecuteAgent: Agent {
     ///   - configuration: Agent configuration. Default: .default
     ///   - memory: Optional memory system. Default: nil
     ///   - inferenceProvider: Optional inference provider. Default: nil
+    ///   - inputGuardrails: Input validation guardrails. Default: []
+    ///   - outputGuardrails: Output validation guardrails. Default: []
     ///   - maxReplanAttempts: Maximum replan attempts. Default: 3
     public init(
         tools: [any Tool] = [],
@@ -287,6 +291,8 @@ public actor PlanAndExecuteAgent: Agent {
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,
         inferenceProvider: (any InferenceProvider)? = nil,
+        inputGuardrails: [any InputGuardrail] = [],
+        outputGuardrails: [any OutputGuardrail] = [],
         maxReplanAttempts: Int = 3
     ) {
         self.tools = tools
@@ -294,6 +300,8 @@ public actor PlanAndExecuteAgent: Agent {
         self.configuration = configuration
         self.memory = memory
         self.inferenceProvider = inferenceProvider
+        self.inputGuardrails = inputGuardrails
+        self.outputGuardrails = outputGuardrails
         self.maxReplanAttempts = maxReplanAttempts
         toolRegistry = ToolRegistry(tools: tools)
     }
@@ -303,11 +311,15 @@ public actor PlanAndExecuteAgent: Agent {
     /// Executes the agent with the given input and returns a result.
     /// - Parameter input: The user's input/query.
     /// - Returns: The result of the agent's execution.
-    /// - Throws: `AgentError` if execution fails.
+    /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
     public func run(_ input: String) async throws -> AgentResult {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
+
+        // Run input guardrails at the start before any processing
+        let runner = GuardrailRunner()
+        _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
         cancellationState = .active
         let resultBuilder = AgentResult.Builder()
@@ -330,6 +342,9 @@ public actor PlanAndExecuteAgent: Agent {
         if let mem = memory {
             await mem.add(.assistant(output))
         }
+
+        // Run output guardrails at the end before returning the result
+        _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
 
         return resultBuilder.build()
     }
@@ -957,6 +972,46 @@ public extension PlanAndExecuteAgent {
             return copy
         }
 
+        /// Sets the input guardrails.
+        /// - Parameter guardrails: The input guardrails.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func inputGuardrails(_ guardrails: [any InputGuardrail]) -> Builder {
+            var copy = self
+            copy._inputGuardrails = guardrails
+            return copy
+        }
+
+        /// Adds an input guardrail.
+        /// - Parameter guardrail: The input guardrail to add.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func addInputGuardrail(_ guardrail: any InputGuardrail) -> Builder {
+            var copy = self
+            copy._inputGuardrails.append(guardrail)
+            return copy
+        }
+
+        /// Sets the output guardrails.
+        /// - Parameter guardrails: The output guardrails.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func outputGuardrails(_ guardrails: [any OutputGuardrail]) -> Builder {
+            var copy = self
+            copy._outputGuardrails = guardrails
+            return copy
+        }
+
+        /// Adds an output guardrail.
+        /// - Parameter guardrail: The output guardrail to add.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func addOutputGuardrail(_ guardrail: any OutputGuardrail) -> Builder {
+            var copy = self
+            copy._outputGuardrails.append(guardrail)
+            return copy
+        }
+
         /// Builds the agent.
         /// - Returns: A new PlanAndExecuteAgent instance.
         public func build() -> PlanAndExecuteAgent {
@@ -966,6 +1021,8 @@ public extension PlanAndExecuteAgent {
                 configuration: _configuration,
                 memory: _memory,
                 inferenceProvider: _inferenceProvider,
+                inputGuardrails: _inputGuardrails,
+                outputGuardrails: _outputGuardrails,
                 maxReplanAttempts: _maxReplanAttempts
             )
         }
@@ -977,6 +1034,8 @@ public extension PlanAndExecuteAgent {
         private var _configuration: AgentConfiguration = .default
         private var _memory: (any Memory)?
         private var _inferenceProvider: (any InferenceProvider)?
+        private var _inputGuardrails: [any InputGuardrail] = []
+        private var _outputGuardrails: [any OutputGuardrail] = []
         private var _maxReplanAttempts: Int = 3
     }
 }

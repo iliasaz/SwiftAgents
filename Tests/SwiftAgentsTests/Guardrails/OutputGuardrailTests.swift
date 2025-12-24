@@ -50,7 +50,7 @@ struct MockAgent: Agent {
     
     nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
-            continuation.yield(.started)
+            continuation.yield(.started(input: input))
             continuation.finish()
         }
     }
@@ -107,18 +107,24 @@ struct OutputGuardrailTests {
     @Test("ClosureOutputGuardrail executes handler on validate")
     func testClosureGuardrailExecutesHandler() async throws {
         // Given
-        var handlerCalled = false
+        actor CallCapture {
+            var called = false
+            func set() { called = true }
+            func get() -> Bool { called }
+        }
+        let capture = CallCapture()
         let guardrail = ClosureOutputGuardrail(name: "test") { _, _, _ in
-            handlerCalled = true
+            await capture.set()
             return .passed()
         }
         let agent = MockAgent()
-        
+
         // When
         _ = try await guardrail.validate("output", agent: agent, context: nil)
-        
+
         // Then
-        #expect(handlerCalled == true)
+        let wasCalled = await capture.get()
+        #expect(wasCalled == true)
     }
     
     // MARK: - Passed Result Tests
@@ -325,10 +331,10 @@ struct OutputGuardrailTests {
         // Given
         let guardrail = ClosureOutputGuardrail(name: "async_error") { _, _, _ in
             try await Task.sleep(for: .milliseconds(1))
-            throw AgentError.executionFailed(underlyingError: "Async failure")
+            throw AgentError.internalError(reason: "Async failure")
         }
         let agent = MockAgent()
-        
+
         // When/Then
         do {
             _ = try await guardrail.validate("output", agent: agent, context: nil as AgentContext?)
@@ -336,10 +342,10 @@ struct OutputGuardrailTests {
         } catch let error as AgentError {
             // Verify the error
             switch error {
-            case .executionFailed:
+            case .internalError:
                 break // Success
             default:
-                Issue.record("Expected executionFailed but got: \(error)")
+                Issue.record("Expected internalError but got: \(error)")
             }
         } catch {
             Issue.record("Expected AgentError but got: \(error)")
@@ -378,10 +384,10 @@ struct OutputGuardrailTests {
         let agent = MockAgent()
         
         // When - use in Task
-        let taskResult = await Task {
+        let taskResult = try await Task {
             try await guardrail.validate("output", agent: agent, context: nil as AgentContext?)
         }.value
-        
+
         // Then
         #expect(taskResult.tripwireTriggered == false)
     }
@@ -469,58 +475,69 @@ struct OutputGuardrailTests {
     @Test("Multiple OutputGuardrails can run sequentially")
     func testMultipleGuardrailsSequential() async throws {
         // Given
-        var executionOrder: [String] = []
-        
+        actor OrderCapture {
+            var order: [String] = []
+            func append(_ name: String) { order.append(name) }
+            func get() -> [String] { order }
+        }
+        let orderCapture = OrderCapture()
+
         let guardrail1 = ClosureOutputGuardrail(name: "first") { _, _, _ in
-            executionOrder.append("first")
+            await orderCapture.append("first")
             return .passed()
         }
-        
+
         let guardrail2 = ClosureOutputGuardrail(name: "second") { _, _, _ in
-            executionOrder.append("second")
+            await orderCapture.append("second")
             return .passed()
         }
-        
+
         let guardrail3 = ClosureOutputGuardrail(name: "third") { _, _, _ in
-            executionOrder.append("third")
+            await orderCapture.append("third")
             return .passed()
         }
-        
+
         let guardrails: [any OutputGuardrail] = [guardrail1, guardrail2, guardrail3]
         let agent = MockAgent()
-        
+
         // When - run all guardrails sequentially
         for guardrail in guardrails {
             _ = try await guardrail.validate("output", agent: agent, context: nil as AgentContext?)
         }
-        
+
         // Then
+        let executionOrder = await orderCapture.get()
         #expect(executionOrder == ["first", "second", "third"])
     }
     
     @Test("Multiple OutputGuardrails short-circuit on tripwire")
     func testMultipleGuardrailsShortCircuit() async throws {
         // Given
-        var executionLog: [String] = []
-        
+        actor LogCapture {
+            var log: [String] = []
+            func append(_ name: String) { log.append(name) }
+            func get() -> [String] { log }
+        }
+        let logCapture = LogCapture()
+
         let guardrail1 = ClosureOutputGuardrail(name: "first") { _, _, _ in
-            executionLog.append("first")
+            await logCapture.append("first")
             return .passed()
         }
-        
+
         let guardrail2 = ClosureOutputGuardrail(name: "second") { _, _, _ in
-            executionLog.append("second")
+            await logCapture.append("second")
             return .tripwire(message: "Second guardrail blocks")
         }
-        
+
         let guardrail3 = ClosureOutputGuardrail(name: "third") { _, _, _ in
-            executionLog.append("third")
+            await logCapture.append("third")
             return .passed()
         }
-        
+
         let guardrails: [any OutputGuardrail] = [guardrail1, guardrail2, guardrail3]
         let agent = MockAgent()
-        
+
         // When - run until tripwire
         for guardrail in guardrails {
             let result = try await guardrail.validate("output", agent: agent, context: nil as AgentContext?)
@@ -528,8 +545,9 @@ struct OutputGuardrailTests {
                 break // Short-circuit
             }
         }
-        
+
         // Then - third guardrail should not have executed
+        let executionLog = await logCapture.get()
         #expect(executionLog == ["first", "second"])
         #expect(!executionLog.contains("third"))
     }

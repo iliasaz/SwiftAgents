@@ -38,6 +38,8 @@ public actor ToolCallingAgent: Agent {
     nonisolated public let configuration: AgentConfiguration
     nonisolated public let memory: (any Memory)?
     nonisolated public let inferenceProvider: (any InferenceProvider)?
+    nonisolated public let inputGuardrails: [any InputGuardrail]
+    nonisolated public let outputGuardrails: [any OutputGuardrail]
 
     // MARK: - Internal State
 
@@ -76,18 +78,24 @@ public actor ToolCallingAgent: Agent {
     ///   - configuration: Agent configuration settings. Default: .default
     ///   - memory: Optional memory system. Default: nil
     ///   - inferenceProvider: Optional custom inference provider. Default: nil
+    ///   - inputGuardrails: Input validation guardrails. Default: []
+    ///   - outputGuardrails: Output validation guardrails. Default: []
     public init(
         tools: [any Tool] = [],
         instructions: String = "",
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,
-        inferenceProvider: (any InferenceProvider)? = nil
+        inferenceProvider: (any InferenceProvider)? = nil,
+        inputGuardrails: [any InputGuardrail] = [],
+        outputGuardrails: [any OutputGuardrail] = []
     ) {
         self.tools = tools
         self.instructions = instructions
         self.configuration = configuration
         self.memory = memory
         self.inferenceProvider = inferenceProvider
+        self.inputGuardrails = inputGuardrails
+        self.outputGuardrails = outputGuardrails
         self.toolRegistry = ToolRegistry(tools: tools)
     }
 
@@ -96,11 +104,15 @@ public actor ToolCallingAgent: Agent {
     /// Executes the agent with the given input and returns a result.
     /// - Parameter input: The user's input/query.
     /// - Returns: The result of the agent's execution.
-    /// - Throws: `AgentError` if execution fails.
+    /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
     public func run(_ input: String) async throws -> AgentResult {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
+
+        // Run input guardrails
+        let runner = GuardrailRunner()
+        _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
         isCancelled = false
         let resultBuilder = AgentResult.Builder()
@@ -123,6 +135,9 @@ public actor ToolCallingAgent: Agent {
         if let mem = memory {
             await mem.add(.assistant(output))
         }
+
+        // Run output guardrails
+        _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
 
         return resultBuilder.build()
     }
@@ -352,6 +367,8 @@ public extension ToolCallingAgent {
         private var _configuration: AgentConfiguration = .default
         private var _memory: (any Memory)?
         private var _inferenceProvider: (any InferenceProvider)?
+        private var _inputGuardrails: [any InputGuardrail] = []
+        private var _outputGuardrails: [any OutputGuardrail] = []
 
         // MARK: - Initialization
 
@@ -429,6 +446,46 @@ public extension ToolCallingAgent {
             return copy
         }
 
+        /// Sets the input guardrails.
+        /// - Parameter guardrails: The input guardrails to use.
+        /// - Returns: A new builder with the guardrails set.
+        @discardableResult
+        public func inputGuardrails(_ guardrails: [any InputGuardrail]) -> Builder {
+            var copy = self
+            copy._inputGuardrails = guardrails
+            return copy
+        }
+
+        /// Adds an input guardrail.
+        /// - Parameter guardrail: The guardrail to add.
+        /// - Returns: A new builder with the guardrail added.
+        @discardableResult
+        public func addInputGuardrail(_ guardrail: any InputGuardrail) -> Builder {
+            var copy = self
+            copy._inputGuardrails.append(guardrail)
+            return copy
+        }
+
+        /// Sets the output guardrails.
+        /// - Parameter guardrails: The output guardrails to use.
+        /// - Returns: A new builder with the guardrails set.
+        @discardableResult
+        public func outputGuardrails(_ guardrails: [any OutputGuardrail]) -> Builder {
+            var copy = self
+            copy._outputGuardrails = guardrails
+            return copy
+        }
+
+        /// Adds an output guardrail.
+        /// - Parameter guardrail: The guardrail to add.
+        /// - Returns: A new builder with the guardrail added.
+        @discardableResult
+        public func addOutputGuardrail(_ guardrail: any OutputGuardrail) -> Builder {
+            var copy = self
+            copy._outputGuardrails.append(guardrail)
+            return copy
+        }
+
         /// Builds the agent.
         /// - Returns: A new ToolCallingAgent instance.
         public func build() -> ToolCallingAgent {
@@ -437,7 +494,9 @@ public extension ToolCallingAgent {
                 instructions: _instructions,
                 configuration: _configuration,
                 memory: _memory,
-                inferenceProvider: _inferenceProvider
+                inferenceProvider: _inferenceProvider,
+                inputGuardrails: _inputGuardrails,
+                outputGuardrails: _outputGuardrails
             )
         }
     }
