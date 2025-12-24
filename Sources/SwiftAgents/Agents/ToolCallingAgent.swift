@@ -334,6 +334,8 @@ public actor ToolCallingAgent: Agent {
 public extension ToolCallingAgent {
     /// Builder for creating ToolCallingAgent instances with a fluent API.
     ///
+    /// Uses value semantics (struct) for Swift 6 concurrency safety.
+    ///
     /// Example:
     /// ```swift
     /// let agent = ToolCallingAgent.Builder()
@@ -342,14 +344,14 @@ public extension ToolCallingAgent {
     ///     .configuration(.default.maxIterations(5))
     ///     .build()
     /// ```
-    final class Builder: @unchecked Sendable {
+    struct Builder: Sendable {
         // MARK: - Properties
 
-        private var tools: [any Tool] = []
-        private var instructions: String = ""
-        private var configuration: AgentConfiguration = .default
-        private var memory: (any Memory)?
-        private var inferenceProvider: (any InferenceProvider)?
+        private var _tools: [any Tool] = []
+        private var _instructions: String = ""
+        private var _configuration: AgentConfiguration = .default
+        private var _memory: (any Memory)?
+        private var _inferenceProvider: (any InferenceProvider)?
 
         // MARK: - Initialization
 
@@ -360,75 +362,82 @@ public extension ToolCallingAgent {
 
         /// Sets the tools.
         /// - Parameter tools: The tools to use.
-        /// - Returns: Self for chaining.
+        /// - Returns: A new builder with the tools set.
         @discardableResult
         public func tools(_ tools: [any Tool]) -> Builder {
-            self.tools = tools
-            return self
+            var copy = self
+            copy._tools = tools
+            return copy
         }
 
         /// Adds a tool.
         /// - Parameter tool: The tool to add.
-        /// - Returns: Self for chaining.
+        /// - Returns: A new builder with the tool added.
         @discardableResult
         public func addTool(_ tool: any Tool) -> Builder {
-            tools.append(tool)
-            return self
+            var copy = self
+            copy._tools.append(tool)
+            return copy
         }
 
         /// Adds built-in tools.
-        /// - Returns: Self for chaining.
+        /// - Returns: A new builder with built-in tools added.
         @discardableResult
         public func withBuiltInTools() -> Builder {
-            tools.append(contentsOf: BuiltInTools.all)
-            return self
+            var copy = self
+            copy._tools.append(contentsOf: BuiltInTools.all)
+            return copy
         }
 
         /// Sets the instructions.
         /// - Parameter instructions: The system instructions.
-        /// - Returns: Self for chaining.
+        /// - Returns: A new builder with the instructions set.
         @discardableResult
         public func instructions(_ instructions: String) -> Builder {
-            self.instructions = instructions
-            return self
+            var copy = self
+            copy._instructions = instructions
+            return copy
         }
 
         /// Sets the configuration.
         /// - Parameter configuration: The agent configuration.
-        /// - Returns: Self for chaining.
+        /// - Returns: A new builder with the configuration set.
         @discardableResult
         public func configuration(_ configuration: AgentConfiguration) -> Builder {
-            self.configuration = configuration
-            return self
+            var copy = self
+            copy._configuration = configuration
+            return copy
         }
 
         /// Sets the memory system.
         /// - Parameter memory: The memory to use.
-        /// - Returns: Self for chaining.
+        /// - Returns: A new builder with the memory set.
         @discardableResult
         public func memory(_ memory: any Memory) -> Builder {
-            self.memory = memory
-            return self
+            var copy = self
+            copy._memory = memory
+            return copy
         }
 
         /// Sets the inference provider.
         /// - Parameter provider: The provider to use.
-        /// - Returns: Self for chaining.
+        /// - Returns: A new builder with the provider set.
         @discardableResult
         public func inferenceProvider(_ provider: any InferenceProvider) -> Builder {
-            self.inferenceProvider = provider
-            return self
+            var copy = self
+            copy._inferenceProvider = provider
+            return copy
         }
 
         /// Builds the agent.
         /// - Returns: A new ToolCallingAgent instance.
         public func build() -> ToolCallingAgent {
             ToolCallingAgent(
-                tools: tools,
-                instructions: instructions,
-                configuration: configuration,
-                memory: memory,
-                inferenceProvider: inferenceProvider
+                tools: _tools,
+                instructions: _instructions,
+                configuration: _configuration,
+                memory: _memory,
+                inferenceProvider: _inferenceProvider
             )
         }
     }

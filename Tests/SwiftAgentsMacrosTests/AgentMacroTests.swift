@@ -151,45 +151,45 @@ final class AgentMacroTests: XCTestCase {
                         }
 
                         /// Sets the tools for the agent.
-                        @discardableResult
                         public func tools(_ tools: [any Tool]) -> Builder {
-                            self._tools = tools
-                            return self
+                            var copy = self
+                            copy._tools = tools
+                            return copy
                         }
 
                         /// Adds a tool to the agent's tool set.
-                        @discardableResult
                         public func addTool(_ tool: any Tool) -> Builder {
-                            self._tools.append(tool)
-                            return self
+                            var copy = self
+                            copy._tools.append(tool)
+                            return copy
                         }
 
                         /// Sets the instructions for the agent.
-                        @discardableResult
                         public func instructions(_ instructions: String) -> Builder {
-                            self._instructions = instructions
-                            return self
+                            var copy = self
+                            copy._instructions = instructions
+                            return copy
                         }
 
                         /// Sets the configuration for the agent.
-                        @discardableResult
                         public func configuration(_ configuration: AgentConfiguration) -> Builder {
-                            self._configuration = configuration
-                            return self
+                            var copy = self
+                            copy._configuration = configuration
+                            return copy
                         }
 
                         /// Sets the memory system for the agent.
-                        @discardableResult
                         public func memory(_ memory: any Memory) -> Builder {
-                            self._memory = memory
-                            return self
+                            var copy = self
+                            copy._memory = memory
+                            return copy
                         }
 
                         /// Sets the inference provider for the agent.
-                        @discardableResult
                         public func inferenceProvider(_ provider: any InferenceProvider) -> Builder {
-                            self._inferenceProvider = provider
-                            return self
+                            var copy = self
+                            copy._inferenceProvider = provider
+                            return copy
                         }
 
                         /// Builds the agent with the configured values.
@@ -346,45 +346,45 @@ final class AgentMacroTests: XCTestCase {
                         }
 
                         /// Sets the tools for the agent.
-                        @discardableResult
                         public func tools(_ tools: [any Tool]) -> Builder {
-                            self._tools = tools
-                            return self
+                            var copy = self
+                            copy._tools = tools
+                            return copy
                         }
 
                         /// Adds a tool to the agent's tool set.
-                        @discardableResult
                         public func addTool(_ tool: any Tool) -> Builder {
-                            self._tools.append(tool)
-                            return self
+                            var copy = self
+                            copy._tools.append(tool)
+                            return copy
                         }
 
                         /// Sets the instructions for the agent.
-                        @discardableResult
                         public func instructions(_ instructions: String) -> Builder {
-                            self._instructions = instructions
-                            return self
+                            var copy = self
+                            copy._instructions = instructions
+                            return copy
                         }
 
                         /// Sets the configuration for the agent.
-                        @discardableResult
                         public func configuration(_ configuration: AgentConfiguration) -> Builder {
-                            self._configuration = configuration
-                            return self
+                            var copy = self
+                            copy._configuration = configuration
+                            return copy
                         }
 
                         /// Sets the memory system for the agent.
-                        @discardableResult
                         public func memory(_ memory: any Memory) -> Builder {
-                            self._memory = memory
-                            return self
+                            var copy = self
+                            copy._memory = memory
+                            return copy
                         }
 
                         /// Sets the inference provider for the agent.
-                        @discardableResult
                         public func inferenceProvider(_ provider: any InferenceProvider) -> Builder {
-                            self._inferenceProvider = provider
-                            return self
+                            var copy = self
+                            copy._inferenceProvider = provider
+                            return copy
                         }
 
                         /// Builds the agent with the configured values.
@@ -531,45 +531,45 @@ final class AgentMacroTests: XCTestCase {
                         }
 
                         /// Sets the tools for the agent.
-                        @discardableResult
                         public func tools(_ tools: [any Tool]) -> Builder {
-                            self._tools = tools
-                            return self
+                            var copy = self
+                            copy._tools = tools
+                            return copy
                         }
 
                         /// Adds a tool to the agent's tool set.
-                        @discardableResult
                         public func addTool(_ tool: any Tool) -> Builder {
-                            self._tools.append(tool)
-                            return self
+                            var copy = self
+                            copy._tools.append(tool)
+                            return copy
                         }
 
                         /// Sets the instructions for the agent.
-                        @discardableResult
                         public func instructions(_ instructions: String) -> Builder {
-                            self._instructions = instructions
-                            return self
+                            var copy = self
+                            copy._instructions = instructions
+                            return copy
                         }
 
                         /// Sets the configuration for the agent.
-                        @discardableResult
                         public func configuration(_ configuration: AgentConfiguration) -> Builder {
-                            self._configuration = configuration
-                            return self
+                            var copy = self
+                            copy._configuration = configuration
+                            return copy
                         }
 
                         /// Sets the memory system for the agent.
-                        @discardableResult
                         public func memory(_ memory: any Memory) -> Builder {
-                            self._memory = memory
-                            return self
+                            var copy = self
+                            copy._memory = memory
+                            return copy
                         }
 
                         /// Sets the inference provider for the agent.
-                        @discardableResult
                         public func inferenceProvider(_ provider: any InferenceProvider) -> Builder {
-                            self._inferenceProvider = provider
-                            return self
+                            var copy = self
+                            copy._inferenceProvider = provider
+                            return copy
                         }
 
                         /// Builds the agent with the configured values.
