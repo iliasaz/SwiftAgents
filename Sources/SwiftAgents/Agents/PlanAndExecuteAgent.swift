@@ -463,151 +463,173 @@ public actor PlanAndExecuteAgent: Agent {
 
         Create a plan with numbered steps. For each step, provide:
         1. A clear description of what the step accomplishes
-        2. If a tool is needed, specify: [TOOL: tool_name] with arguments
-        3. If the step depends on previous steps, mention which ones
+        2. If a tool is needed, specify the tool name and arguments
+        3. If the step depends on previous steps, specify their step numbers
 
-        Format your response EXACTLY as follows:
-        PLAN:
-        Step 1: [Description] [TOOL: tool_name(arg1: value1)] [DEPENDS: none]
-        Step 2: [Description] [TOOL: tool_name(arg1: value1)] [DEPENDS: Step 1]
-        Step 3: [Description] [DEPENDS: Step 1, Step 2]
-        END_PLAN
+        Format your response as a JSON object with the following structure:
+        {
+          "steps": [
+            {
+              "stepNumber": 1,
+              "description": "Clear description of the step",
+              "toolName": "tool_name",
+              "toolArguments": {"arg1": "value1", "arg2": 42},
+              "dependsOn": []
+            },
+            {
+              "stepNumber": 2,
+              "description": "Another step description",
+              "toolName": null,
+              "toolArguments": {},
+              "dependsOn": [1]
+            }
+          ]
+        }
 
         Rules:
         1. Be specific and actionable in each step.
         2. Only use tools that are available.
         3. Keep the plan concise but complete.
-        4. Specify dependencies accurately.
+        4. Specify dependencies as an array of step numbers.
+        5. If a step has no tool, set toolName to null and toolArguments to {}.
+        6. Respond ONLY with valid JSON - no additional text before or after.
 
         User Goal: \(input)
 
-        Create your plan:
+        Create your plan in JSON format:
         """
     }
 
     private func parsePlan(from response: String, goal: String) -> ExecutionPlan {
+        // Try to parse as JSON first
+        if let plan = parseJSONPlan(from: response, goal: goal) {
+            return plan
+        }
+
+        // Fallback: If JSON parsing fails, create a single generic step
+        Log.agents.warning("Failed to parse plan as JSON, creating fallback plan")
+        let step = PlanStep(
+            stepNumber: 1,
+            stepDescription: "Execute the task: \(goal)",
+            toolName: nil
+        )
+        return ExecutionPlan(steps: [step], goal: goal)
+    }
+
+    /// Parses a JSON-formatted plan response.
+    /// - Parameters:
+    ///   - response: The LLM response containing JSON.
+    ///   - goal: The goal being planned for.
+    /// - Returns: An ExecutionPlan if parsing succeeds, nil otherwise.
+    private func parseJSONPlan(from response: String, goal: String) -> ExecutionPlan? {
+        // Extract JSON from response (handle cases where LLM adds extra text)
+        let jsonString = extractJSON(from: response)
+        guard let jsonData = jsonString.data(using: .utf8) else {
+            return nil
+        }
+
+        // Decode the plan
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+
+        guard let planResponse = try? decoder.decode(PlanResponse.self, from: jsonData) else {
+            return nil
+        }
+
+        // Convert PlanResponse to ExecutionPlan
         var steps: [PlanStep] = []
         var stepNumberToId: [Int: UUID] = [:]
 
-        // Extract content between PLAN: and END_PLAN
-        let planContent: String
-        if let planStart = response.range(of: "PLAN:", options: .caseInsensitive),
-           let planEnd = response.range(of: "END_PLAN", options: .caseInsensitive) {
-            planContent = String(response[planStart.upperBound..<planEnd.lowerBound])
-        } else {
-            planContent = response
+        // First pass: Create all steps with UUIDs
+        for stepData in planResponse.steps {
+            let stepId = UUID()
+            stepNumberToId[stepData.stepNumber] = stepId
         }
 
-        // Parse each line as a step
-        let lines = planContent.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+        // Second pass: Build PlanSteps with resolved dependencies
+        for stepData in planResponse.steps {
+            guard let stepId = stepNumberToId[stepData.stepNumber] else { continue }
 
-        for line in lines {
-            // Match "Step N:" pattern
-            guard let stepMatch = line.range(of: #"Step\s+(\d+):"#, options: .regularExpression) else {
-                continue
-            }
-
-            let stepNumberStr = line[stepMatch]
-                .components(separatedBy: CharacterSet.decimalDigits.inverted)
-                .joined()
-            guard let stepNumber = Int(stepNumberStr) else { continue }
-
-            // Extract description (everything after "Step N:" until [TOOL:] or [DEPENDS:])
-            let afterStep = String(line[stepMatch.upperBound...]).trimmingCharacters(in: .whitespaces)
-            var description = afterStep
-            var toolName: String?
-            var toolArguments: [String: SendableValue] = [:]
-            var dependsOn: [UUID] = []
-
-            // Parse tool if present
-            if let toolStart = afterStep.range(of: "[TOOL:", options: .caseInsensitive) {
-                description = String(afterStep[..<toolStart.lowerBound]).trimmingCharacters(in: .whitespaces)
-
-                if let toolEnd = afterStep.range(of: "]", range: toolStart.upperBound..<afterStep.endIndex) {
-                    let toolSpec = String(afterStep[toolStart.upperBound..<toolEnd.lowerBound])
-                        .trimmingCharacters(in: .whitespaces)
-
-                    // Parse tool_name(arg1: value1, arg2: value2)
-                    if let parenStart = toolSpec.firstIndex(of: "("),
-                       let parenEnd = toolSpec.lastIndex(of: ")") {
-                        toolName = String(toolSpec[..<parenStart]).trimmingCharacters(in: .whitespaces)
-                        let argsString = String(toolSpec[toolSpec.index(after: parenStart)..<parenEnd])
-                        toolArguments = parseToolArguments(argsString)
-                    } else {
-                        toolName = toolSpec.trimmingCharacters(in: .whitespaces)
-                    }
-                }
-            }
-
-            // Parse dependencies if present
-            if let dependsStart = afterStep.range(of: "[DEPENDS:", options: .caseInsensitive) {
-                if let dependsEnd = afterStep.range(of: "]", range: dependsStart.upperBound..<afterStep.endIndex) {
-                    let dependsSpec = String(afterStep[dependsStart.upperBound..<dependsEnd.lowerBound])
-                        .trimmingCharacters(in: .whitespaces)
-
-                    if dependsSpec.lowercased() != "none" {
-                        // Parse "Step 1, Step 2" format
-                        let deps = dependsSpec.components(separatedBy: ",")
-                            .map { $0.trimmingCharacters(in: .whitespaces) }
-
-                        for dep in deps {
-                            let depNumStr = dep.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-                            if let depNum = Int(depNumStr), let depId = stepNumberToId[depNum] {
-                                dependsOn.append(depId)
-                            }
-                        }
-                    }
-                }
-
-                // Remove DEPENDS part from description if it wasn't already removed
-                if let dependsStartInDesc = description.range(of: "[DEPENDS:", options: .caseInsensitive) {
-                    description = String(description[..<dependsStartInDesc.lowerBound])
-                        .trimmingCharacters(in: .whitespaces)
-                }
-            }
-
-            let stepId = UUID()
-            stepNumberToId[stepNumber] = stepId
+            // Resolve dependencies from step numbers to UUIDs
+            let dependencyIds = stepData.dependsOn.compactMap { stepNumberToId[$0] }
 
             let step = PlanStep(
                 id: stepId,
-                stepNumber: stepNumber,
-                stepDescription: description,
-                toolName: toolName,
-                toolArguments: toolArguments,
-                dependsOn: dependsOn
+                stepNumber: stepData.stepNumber,
+                stepDescription: stepData.description,
+                toolName: stepData.toolName,
+                toolArguments: stepData.toolArguments ?? [:],
+                dependsOn: dependencyIds
             )
             steps.append(step)
         }
 
-        // If no steps were parsed, create a single generic step
-        if steps.isEmpty {
-            steps.append(PlanStep(
-                stepNumber: 1,
-                stepDescription: "Directly answer the user's request without using tools: \(goal)",
-                toolName: nil
-            ))
+        // If no steps were parsed, return nil to trigger fallback
+        guard !steps.isEmpty else {
+            return nil
         }
 
         return ExecutionPlan(steps: steps, goal: goal)
     }
 
-    private func parseToolArguments(_ argsString: String) -> [String: SendableValue] {
-        var arguments: [String: SendableValue] = [:]
-        let pairs = splitArguments(argsString)
+    /// Extracts JSON content from a response that may contain additional text.
+    private func extractJSON(from response: String) -> String {
+        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        for pair in pairs {
-            let parts = pair.components(separatedBy: ":")
-            guard parts.count >= 2 else { continue }
+        // If response starts with {, try to find the matching closing brace
+        if let firstBrace = trimmed.firstIndex(of: "{") {
+            var depth = 0
+            var inString = false
+            var escapeNext = false
 
-            let key = parts[0].trimmingCharacters(in: .whitespaces)
-            let valueStr = parts.dropFirst().joined(separator: ":").trimmingCharacters(in: .whitespaces)
-            arguments[key] = parseValue(valueStr)
+            for (index, char) in trimmed[firstBrace...].enumerated() {
+                if escapeNext {
+                    escapeNext = false
+                    continue
+                }
+
+                if char == "\\" {
+                    escapeNext = true
+                    continue
+                }
+
+                if char == "\"" && !escapeNext {
+                    inString.toggle()
+                    continue
+                }
+
+                if !inString {
+                    if char == "{" {
+                        depth += 1
+                    } else if char == "}" {
+                        depth -= 1
+                        if depth == 0 {
+                            let endIndex = trimmed.index(firstBrace, offsetBy: index + 1)
+                            return String(trimmed[firstBrace..<endIndex])
+                        }
+                    }
+                }
+            }
         }
 
-        return arguments
+        // If extraction failed, return original (might still be valid JSON)
+        return trimmed
+    }
+
+    // MARK: - Plan JSON Structures
+
+    /// Decodable structure for plan responses.
+    private struct PlanResponse: Codable {
+        let steps: [StepData]
+    }
+
+    /// Decodable structure for individual step data.
+    private struct StepData: Codable {
+        let stepNumber: Int
+        let description: String
+        let toolName: String?
+        let toolArguments: [String: SendableValue]?
+        let dependsOn: [Int]
     }
 
     // MARK: - Step Execution
@@ -737,13 +759,27 @@ public actor PlanAndExecuteAgent: Agent {
         2. Addresses the failures with alternative approaches
         3. Achieves the original goal
 
-        Format your response EXACTLY as follows:
-        PLAN:
-        Step 1: [Description] [TOOL: tool_name(arg1: value1)] [DEPENDS: none]
-        Step 2: [Description] [DEPENDS: Step 1]
-        END_PLAN
+        Format your response as a JSON object with the following structure:
+        {
+          "steps": [
+            {
+              "stepNumber": 1,
+              "description": "Clear description of the step",
+              "toolName": "tool_name",
+              "toolArguments": {"arg1": "value1"},
+              "dependsOn": []
+            }
+          ]
+        }
 
-        Create your revised plan:
+        Rules:
+        1. Be specific and actionable in each step.
+        2. Only use tools that are available.
+        3. Specify dependencies as an array of step numbers.
+        4. If a step has no tool, set toolName to null and toolArguments to {}.
+        5. Respond ONLY with valid JSON - no additional text before or after.
+
+        Create your revised plan in JSON format:
         """
     }
 
@@ -819,74 +855,14 @@ public actor PlanAndExecuteAgent: Agent {
             reason: "No inference provider configured. Please provide an InferenceProvider."
         )
     }
-
-    /// Splits argument string by comma, respecting quotes and nested structures.
-    private func splitArguments(_ str: String) -> [String] {
-        var result: [String] = []
-        var current = ""
-        var depth = 0
-        var inQuote = false
-        var quoteChar: Character = "\""
-
-        for char in str {
-            if !inQuote, char == "\"" || char == "'" {
-                inQuote = true
-                quoteChar = char
-                current.append(char)
-            } else if inQuote, char == quoteChar {
-                inQuote = false
-                current.append(char)
-            } else if !inQuote, char == "(" || char == "[" || char == "{" {
-                depth += 1
-                current.append(char)
-            } else if !inQuote, char == ")" || char == "]" || char == "}" {
-                depth -= 1
-                current.append(char)
-            } else if !inQuote, depth == 0, char == "," {
-                result.append(current.trimmingCharacters(in: .whitespaces))
-                current = ""
-            } else {
-                current.append(char)
-            }
-        }
-
-        if !current.trimmingCharacters(in: .whitespaces).isEmpty {
-            result.append(current.trimmingCharacters(in: .whitespaces))
-        }
-
-        return result
-    }
-
-    private func parseValue(_ valueStr: String) -> SendableValue {
-        let trimmed = valueStr.trimmingCharacters(in: .whitespaces)
-
-        // Null
-        if trimmed.lowercased() == "null" || trimmed.lowercased() == "nil" {
-            return .null
-        }
-
-        // Boolean
-        if trimmed.lowercased() == "true" { return .bool(true) }
-        if trimmed.lowercased() == "false" { return .bool(false) }
-
-        // Number
-        if let intValue = Int(trimmed) { return .int(intValue) }
-        if let doubleValue = Double(trimmed) { return .double(doubleValue) }
-
-        // String (remove quotes if present)
-        var str = trimmed
-        if (str.hasPrefix("\"") && str.hasSuffix("\"")) ||
-            (str.hasPrefix("'") && str.hasSuffix("'")) {
-            str = String(str.dropFirst().dropLast())
-        }
-        return .string(str)
-    }
 }
 
 // MARK: - PlanAndExecuteAgent.Builder
 
 public extension PlanAndExecuteAgent {
     /// Builder for creating PlanAndExecuteAgent instances with a fluent API.
+    ///
+    /// Uses value semantics (struct) for Swift 6 concurrency safety.
     ///
     /// Example:
     /// ```swift
@@ -896,7 +872,7 @@ public extension PlanAndExecuteAgent {
     ///     .maxReplanAttempts(5)
     ///     .build()
     /// ```
-    final class Builder: @unchecked Sendable {
+    struct Builder: Sendable {
         // MARK: Public
 
         /// Creates a new builder.
@@ -907,8 +883,9 @@ public extension PlanAndExecuteAgent {
         /// - Returns: Self for chaining.
         @discardableResult
         public func tools(_ tools: [any Tool]) -> Builder {
-            self.tools = tools
-            return self
+            var copy = self
+            copy._tools = tools
+            return copy
         }
 
         /// Adds a tool.
@@ -916,16 +893,18 @@ public extension PlanAndExecuteAgent {
         /// - Returns: Self for chaining.
         @discardableResult
         public func addTool(_ tool: any Tool) -> Builder {
-            tools.append(tool)
-            return self
+            var copy = self
+            copy._tools.append(tool)
+            return copy
         }
 
         /// Adds built-in tools.
         /// - Returns: Self for chaining.
         @discardableResult
         public func withBuiltInTools() -> Builder {
-            tools.append(contentsOf: BuiltInTools.all)
-            return self
+            var copy = self
+            copy._tools.append(contentsOf: BuiltInTools.all)
+            return copy
         }
 
         /// Sets the instructions.
@@ -933,8 +912,9 @@ public extension PlanAndExecuteAgent {
         /// - Returns: Self for chaining.
         @discardableResult
         public func instructions(_ instructions: String) -> Builder {
-            self.instructions = instructions
-            return self
+            var copy = self
+            copy._instructions = instructions
+            return copy
         }
 
         /// Sets the configuration.
@@ -942,8 +922,9 @@ public extension PlanAndExecuteAgent {
         /// - Returns: Self for chaining.
         @discardableResult
         public func configuration(_ configuration: AgentConfiguration) -> Builder {
-            self.configuration = configuration
-            return self
+            var copy = self
+            copy._configuration = configuration
+            return copy
         }
 
         /// Sets the memory system.
@@ -951,8 +932,9 @@ public extension PlanAndExecuteAgent {
         /// - Returns: Self for chaining.
         @discardableResult
         public func memory(_ memory: any Memory) -> Builder {
-            self.memory = memory
-            return self
+            var copy = self
+            copy._memory = memory
+            return copy
         }
 
         /// Sets the inference provider.
@@ -960,8 +942,9 @@ public extension PlanAndExecuteAgent {
         /// - Returns: Self for chaining.
         @discardableResult
         public func inferenceProvider(_ provider: any InferenceProvider) -> Builder {
-            inferenceProvider = provider
-            return self
+            var copy = self
+            copy._inferenceProvider = provider
+            return copy
         }
 
         /// Sets the maximum number of replan attempts.
@@ -969,30 +952,31 @@ public extension PlanAndExecuteAgent {
         /// - Returns: Self for chaining.
         @discardableResult
         public func maxReplanAttempts(_ attempts: Int) -> Builder {
-            maxReplanAttempts = attempts
-            return self
+            var copy = self
+            copy._maxReplanAttempts = attempts
+            return copy
         }
 
         /// Builds the agent.
         /// - Returns: A new PlanAndExecuteAgent instance.
         public func build() -> PlanAndExecuteAgent {
             PlanAndExecuteAgent(
-                tools: tools,
-                instructions: instructions,
-                configuration: configuration,
-                memory: memory,
-                inferenceProvider: inferenceProvider,
-                maxReplanAttempts: maxReplanAttempts
+                tools: _tools,
+                instructions: _instructions,
+                configuration: _configuration,
+                memory: _memory,
+                inferenceProvider: _inferenceProvider,
+                maxReplanAttempts: _maxReplanAttempts
             )
         }
 
         // MARK: Private
 
-        private var tools: [any Tool] = []
-        private var instructions: String = ""
-        private var configuration: AgentConfiguration = .default
-        private var memory: (any Memory)?
-        private var inferenceProvider: (any InferenceProvider)?
-        private var maxReplanAttempts: Int = 3
+        private var _tools: [any Tool] = []
+        private var _instructions: String = ""
+        private var _configuration: AgentConfiguration = .default
+        private var _memory: (any Memory)?
+        private var _inferenceProvider: (any InferenceProvider)?
+        private var _maxReplanAttempts: Int = 3
     }
 }

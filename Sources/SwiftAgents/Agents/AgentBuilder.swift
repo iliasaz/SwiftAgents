@@ -90,10 +90,6 @@ public struct AgentMemoryComponent: AgentComponent {
     }
 }
 
-/// Type alias for cleaner DSL syntax in AgentBuilder.
-/// Note: This is different from SwiftAgents.MemoryComponent used in MemoryBuilder.
-public typealias AgentBuilderMemoryComponent = AgentMemoryComponent
-
 // MARK: - Configuration
 
 /// Configuration component for agent settings.
