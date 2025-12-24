@@ -4,6 +4,9 @@
 // OpenAI-compatible request/response types for the OpenRouter API.
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // MARK: - OpenRouterRequest
 

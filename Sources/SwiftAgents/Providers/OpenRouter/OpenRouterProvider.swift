@@ -4,6 +4,9 @@
 // OpenRouter inference provider for accessing multiple LLM backends.
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // MARK: - OpenRouterProvider
 
@@ -217,9 +220,9 @@ public actor OpenRouterProvider: InferenceProvider {
                 }
 
                 // Parse usage statistics
-                var usage: TokenUsage?
+                var usage: InferenceResponse.TokenUsage?
                 if let responseUsage = chatResponse.usage {
-                    usage = TokenUsage(
+                    usage = InferenceResponse.TokenUsage(
                         inputTokens: responseUsage.promptTokens,
                         outputTokens: responseUsage.completionTokens
                     )
@@ -274,6 +277,54 @@ public actor OpenRouterProvider: InferenceProvider {
             try Task.checkCancellation()
 
             do {
+                #if canImport(FoundationNetworking)
+                // Linux: Use data(for:) and manual line splitting
+                let (data, response) = try await session.data(for: request)
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw AgentError.generationFailed(reason: "Invalid response type")
+                }
+
+                // Update rate limit info
+                rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
+
+                // Handle HTTP errors
+                if httpResponse.statusCode != 200 {
+                    try handleHTTPError(statusCode: httpResponse.statusCode, data: data, attempt: attempt, maxRetries: maxRetries)
+                    continue
+                }
+
+                // Process SSE stream by splitting data into lines
+                guard let responseString = String(data: data, encoding: .utf8) else {
+                    throw AgentError.generationFailed(reason: "Invalid UTF-8 data")
+                }
+
+                let lines = responseString.components(separatedBy: .newlines)
+                for line in lines {
+                    try Task.checkCancellation()
+
+                    guard line.hasPrefix("data: ") else { continue }
+                    let jsonString = String(line.dropFirst(6))
+
+                    if jsonString == "[DONE]" {
+                        continuation.finish()
+                        return
+                    }
+
+                    guard let jsonData = jsonString.data(using: .utf8) else { continue }
+
+                    do {
+                        let chunk = try decoder.decode(OpenRouterStreamChunk.self, from: jsonData)
+                        if let content = chunk.choices?.first?.delta?.content {
+                            continuation.yield(content)
+                        }
+                    } catch {
+                        // Skip malformed chunks
+                        continue
+                    }
+                }
+                #else
+                // Apple platforms: Use bytes(for:) with line iterator
                 let (bytes, response) = try await session.bytes(for: request)
 
                 guard let httpResponse = response as? HTTPURLResponse else {
@@ -307,7 +358,7 @@ public actor OpenRouterProvider: InferenceProvider {
                         return
                     }
 
-                    guard let jsonData = jsonString.data(using: .utf8) else { continue }
+                    guard let jsonData = jsonString.data(using: String.Encoding.utf8) else { continue }
 
                     do {
                         let chunk = try decoder.decode(OpenRouterStreamChunk.self, from: jsonData)
@@ -319,6 +370,7 @@ public actor OpenRouterProvider: InferenceProvider {
                         continue
                     }
                 }
+                #endif
 
                 continuation.finish()
                 return
