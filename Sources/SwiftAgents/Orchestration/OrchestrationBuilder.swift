@@ -20,10 +20,12 @@ import Foundation
 /// - `Transform`: Apply custom transformations
 public protocol OrchestrationStep: Sendable {
     /// Executes this step with the given input.
-    /// - Parameter input: The input string to process.
+    /// - Parameters:
+    ///   - input: The input string to process.
+    ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: The result of executing this step.
     /// - Throws: `AgentError` or `OrchestrationError` if execution fails.
-    func execute(_ input: String) async throws -> AgentResult
+    func execute(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult
 }
 
 // MARK: - OrchestrationBuilder
@@ -118,8 +120,8 @@ public struct AgentStep: OrchestrationStep {
         self.name = name
     }
 
-    public func execute(_ input: String) async throws -> AgentResult {
-        try await agent.run(input)
+    public func execute(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
+        try await agent.run(input, hooks: hooks)
     }
 }
 
@@ -179,7 +181,7 @@ public struct Sequential: OrchestrationStep {
         self.transformer = transformer
     }
 
-    public func execute(_ input: String) async throws -> AgentResult {
+    public func execute(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
         guard !steps.isEmpty else {
             return AgentResult(output: input)
         }
@@ -193,7 +195,7 @@ public struct Sequential: OrchestrationStep {
         var allMetadata: [String: SendableValue] = [:]
 
         for (index, step) in steps.enumerated() {
-            let result = try await step.execute(currentInput)
+            let result = try await step.execute(currentInput, hooks: hooks)
 
             // Accumulate tool calls and results
             allToolCalls.append(contentsOf: result.toolCalls)
@@ -308,7 +310,7 @@ public struct Parallel: OrchestrationStep {
         self.maxConcurrency = maxConcurrency
     }
 
-    public func execute(_ input: String) async throws -> AgentResult {
+    public func execute(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
         guard !agents.isEmpty else {
             return AgentResult(output: input)
         }
@@ -327,7 +329,7 @@ public struct Parallel: OrchestrationStep {
             let initialCount = maxConcurrency.map { min($0, agents.count) } ?? agents.count
             for agent in pendingAgents.prefix(initialCount) {
                 group.addTask {
-                    let result = try await agent.1.run(input)
+                    let result = try await agent.1.run(input, hooks: hooks)
                     return (agent.0, result)
                 }
             }
@@ -341,7 +343,7 @@ public struct Parallel: OrchestrationStep {
                 if !pendingAgents.isEmpty {
                     let nextAgent = pendingAgents.removeFirst()
                     group.addTask {
-                        let result = try await nextAgent.1.run(input)
+                        let result = try await nextAgent.1.run(input, hooks: hooks)
                         return (nextAgent.0, result)
                     }
                 }
@@ -459,7 +461,7 @@ public struct Router: OrchestrationStep {
         self.fallbackAgent = fallback
     }
 
-    public func execute(_ input: String) async throws -> AgentResult {
+    public func execute(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
         let startTime = ContinuousClock.now
 
         // Find the first matching route
@@ -476,10 +478,10 @@ public struct Router: OrchestrationStep {
         let routeName: String
 
         if let route = selectedRoute {
-            result = try await route.agent.run(input)
+            result = try await route.agent.run(input, hooks: hooks)
             routeName = route.name ?? "unnamed"
         } else if let fallback = fallbackAgent {
-            result = try await fallback.run(input)
+            result = try await fallback.run(input, hooks: hooks)
             routeName = "fallback"
         } else {
             throw OrchestrationError.routingFailed(
@@ -619,7 +621,7 @@ public struct Transform: OrchestrationStep {
         self.transformer = transformer
     }
 
-    public func execute(_ input: String) async throws -> AgentResult {
+    public func execute(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
         let startTime = ContinuousClock.now
         let output = try await transformer(input)
         let duration = ContinuousClock.now - startTime
@@ -682,10 +684,12 @@ public struct Orchestration: Sendable {
     }
 
     /// Executes the orchestration workflow.
-    /// - Parameter input: The input string to process.
+    /// - Parameters:
+    ///   - input: The input string to process.
+    ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: The final result after all steps complete.
     /// - Throws: `AgentError` or `OrchestrationError` if execution fails.
-    public func run(_ input: String) async throws -> AgentResult {
+    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !steps.isEmpty else {
             return AgentResult(output: input)
         }
@@ -699,7 +703,7 @@ public struct Orchestration: Sendable {
         var allMetadata: [String: SendableValue] = [:]
 
         for (index, step) in steps.enumerated() {
-            let result = try await step.execute(currentInput)
+            let result = try await step.execute(currentInput, hooks: hooks)
 
             // Accumulate results
             allToolCalls.append(contentsOf: result.toolCalls)
@@ -745,7 +749,7 @@ public struct Orchestration: Sendable {
                 for (index, step) in stepsCopy.enumerated() {
                     continuation.yield(.iterationStarted(number: index + 1))
 
-                    let result = try await step.execute(currentInput)
+                    let result = try await step.execute(currentInput, hooks: nil)
                     currentInput = result.output
 
                     continuation.yield(.iterationCompleted(number: index + 1))

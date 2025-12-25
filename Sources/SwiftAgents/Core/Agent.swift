@@ -60,15 +60,19 @@ public protocol Agent: Sendable {
     nonisolated var outputGuardrails: [any OutputGuardrail] { get }
 
     /// Executes the agent with the given input and returns a result.
-    /// - Parameter input: The user's input/query.
+    /// - Parameters:
+    ///   - input: The user's input/query.
+    ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
-    func run(_ input: String) async throws -> AgentResult
+    func run(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult
 
     /// Streams the agent's execution, yielding events as they occur.
-    /// - Parameter input: The user's input/query.
+    /// - Parameters:
+    ///   - input: The user's input/query.
+    ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: An async stream of agent events.
-    nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error>
+    nonisolated func stream(_ input: String, hooks: (any RunHooks)?) -> AsyncThrowingStream<AgentEvent, Error>
 
     /// Cancels any ongoing execution.
     func cancel() async
@@ -91,6 +95,20 @@ public extension Agent {
 
     /// Default output guardrails (none).
     nonisolated var outputGuardrails: [any OutputGuardrail] { [] }
+}
+
+// MARK: - Agent Backward Compatibility
+
+public extension Agent {
+    /// Convenience method for run without hooks.
+    func run(_ input: String) async throws -> AgentResult {
+        try await run(input, hooks: nil)
+    }
+
+    /// Convenience method for stream without hooks.
+    nonisolated func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+        stream(input, hooks: nil)
+    }
 }
 
 // MARK: - InferenceProvider

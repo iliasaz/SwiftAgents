@@ -317,54 +317,69 @@ public actor PlanAndExecuteAgent: Agent {
     // MARK: - Agent Protocol Methods
 
     /// Executes the agent with the given input and returns a result.
-    /// - Parameter input: The user's input/query.
+    /// - Parameters:
+    ///   - input: The user's input/query.
+    ///   - hooks: Optional hooks for observing agent execution events.
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
-    public func run(_ input: String) async throws -> AgentResult {
+    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
 
-        // Run input guardrails at the start before any processing
-        let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration)
-        _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
+        // Notify hooks of agent start
+        await hooks?.onAgentStart(context: nil, agent: self, input: input)
 
-        cancellationState = .active
-        let resultBuilder = AgentResult.Builder()
-        _ = resultBuilder.start()
+        do {
+            // Run input guardrails at the start before any processing
+            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration)
+            _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
-        // Store input in memory if available
-        if let mem = memory {
-            await mem.add(.user(input))
+            cancellationState = .active
+            let resultBuilder = AgentResult.Builder()
+            _ = resultBuilder.start()
+
+            // Store input in memory if available
+            if let mem = memory {
+                await mem.add(.user(input))
+            }
+
+            // Execute the Plan-and-Execute loop
+            let output = try await executePlanAndExecuteLoop(
+                input: input,
+                resultBuilder: resultBuilder,
+                hooks: hooks
+            )
+
+            _ = resultBuilder.setOutput(output)
+
+            // Run output guardrails BEFORE storing in memory
+            try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
+
+            // Only store output in memory if validation passed
+            if let mem = memory {
+                await mem.add(.assistant(output))
+            }
+
+            let result = resultBuilder.build()
+            await hooks?.onAgentEnd(context: nil, agent: self, result: result)
+            return result
+        } catch {
+            await hooks?.onError(context: nil, agent: self, error: error)
+            throw error
         }
-
-        // Execute the Plan-and-Execute loop
-        let output = try await executePlanAndExecuteLoop(
-            input: input,
-            resultBuilder: resultBuilder
-        )
-
-        _ = resultBuilder.setOutput(output)
-
-        // Run output guardrails BEFORE storing in memory
-        try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
-
-        // Only store output in memory if validation passed
-        if let mem = memory {
-            await mem.add(.assistant(output))
-        }
-
-        return resultBuilder.build()
     }
 
     /// Streams the agent's execution, yielding events as they occur.
-    /// - Parameter input: The user's input/query.
+    /// - Parameters:
+    ///   - input: The user's input/query.
+    ///   - hooks: Optional hooks for observing agent execution events.
     /// - Returns: An async stream of agent events.
-    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { agent, continuation in
             continuation.yield(.started(input: input))
             do {
-                let result = try await agent.run(input)
+                let result = try await agent.run(input, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {
@@ -387,13 +402,14 @@ public actor PlanAndExecuteAgent: Agent {
 
     private func executePlanAndExecuteLoop(
         input: String,
-        resultBuilder: AgentResult.Builder
+        resultBuilder: AgentResult.Builder,
+        hooks: (any RunHooks)? = nil
     ) async throws -> String {
         var replanAttempts = 0
         let startTime = ContinuousClock.now
 
         // Phase 1: Generate initial plan
-        var plan = try await generatePlan(for: input)
+        var plan = try await generatePlan(for: input, hooks: hooks)
         _ = resultBuilder.setMetadata("initialPlan", .string(plan.description))
 
         // Phase 2: Execute steps
@@ -417,7 +433,7 @@ public actor PlanAndExecuteAgent: Agent {
                     if replanAttempts < maxReplanAttempts {
                         replanAttempts += 1
                         _ = resultBuilder.incrementIteration()
-                        plan = try await replan(original: plan, input: input)
+                        plan = try await replan(original: plan, input: input, hooks: hooks)
                         _ = resultBuilder.setMetadata("replan_\(replanAttempts)", .string(plan.description))
                         continue
                     } else {
@@ -445,7 +461,7 @@ public actor PlanAndExecuteAgent: Agent {
 
             // Execute the step
             do {
-                let stepResult = try await executeStep(step, plan: plan, resultBuilder: resultBuilder)
+                let stepResult = try await executeStep(step, plan: plan, resultBuilder: resultBuilder, hooks: hooks)
                 plan.updateStep(id: step.id, status: .completed, result: stepResult)
             } catch {
                 let errorMessage = (error as? AgentError)?.localizedDescription ?? error.localizedDescription
@@ -463,14 +479,16 @@ public actor PlanAndExecuteAgent: Agent {
         }
 
         // Phase 4: Synthesize final answer
-        return try await synthesizeFinalAnswer(plan: plan, input: input)
+        return try await synthesizeFinalAnswer(plan: plan, input: input, hooks: hooks)
     }
 
     // MARK: - Plan Generation
 
-    private func generatePlan(for input: String) async throws -> ExecutionPlan {
+    private func generatePlan(for input: String, hooks: (any RunHooks)? = nil) async throws -> ExecutionPlan {
         let prompt = buildPlanningPrompt(for: input)
+        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [])
         let response = try await generateResponse(prompt: prompt)
+        await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
         return parsePlan(from: response, goal: input)
     }
 
@@ -660,7 +678,8 @@ public actor PlanAndExecuteAgent: Agent {
     private func executeStep(
         _ step: PlanStep,
         plan: ExecutionPlan,
-        resultBuilder: AgentResult.Builder
+        resultBuilder: AgentResult.Builder,
+        hooks: (any RunHooks)? = nil
     ) async throws -> String {
         // If the step has a tool, execute it
         if let toolName = step.toolName {
@@ -672,6 +691,11 @@ public actor PlanAndExecuteAgent: Agent {
 
             let startTime = ContinuousClock.now
             do {
+                // Notify hooks before tool execution
+                if let tool = await toolRegistry.tool(named: toolName) {
+                    await hooks?.onToolStart(context: nil, agent: self, tool: tool, arguments: step.toolArguments)
+                }
+
                 let toolResult = try await toolRegistry.execute(
                     toolNamed: toolName,
                     arguments: step.toolArguments,
@@ -686,6 +710,11 @@ public actor PlanAndExecuteAgent: Agent {
                     duration: duration
                 )
                 _ = resultBuilder.addToolResult(result)
+
+                // Notify hooks after successful tool execution
+                if let tool = await toolRegistry.tool(named: toolName) {
+                    await hooks?.onToolEnd(context: nil, agent: self, tool: tool, result: toolResult)
+                }
 
                 return toolResult.description
             } catch {
@@ -708,7 +737,10 @@ public actor PlanAndExecuteAgent: Agent {
 
         // For steps without tools, use the LLM to execute
         let prompt = buildStepExecutionPrompt(step: step, plan: plan)
-        return try await generateResponse(prompt: prompt)
+        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [])
+        let response = try await generateResponse(prompt: prompt)
+        await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
+        return response
     }
 
     private func buildStepExecutionPrompt(step: PlanStep, plan: ExecutionPlan) -> String {
@@ -736,9 +768,11 @@ public actor PlanAndExecuteAgent: Agent {
 
     // MARK: - Replanning
 
-    private func replan(original: ExecutionPlan, input: String) async throws -> ExecutionPlan {
+    private func replan(original: ExecutionPlan, input: String, hooks: (any RunHooks)? = nil) async throws -> ExecutionPlan {
         let prompt = buildReplanPrompt(original: original, input: input)
+        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [])
         let response = try await generateResponse(prompt: prompt)
+        await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
         var newPlan = parsePlan(from: response, goal: input)
         newPlan.revisionCount = original.revisionCount + 1
         return newPlan
@@ -810,7 +844,7 @@ public actor PlanAndExecuteAgent: Agent {
 
     // MARK: - Final Answer Synthesis
 
-    private func synthesizeFinalAnswer(plan: ExecutionPlan, input: String) async throws -> String {
+    private func synthesizeFinalAnswer(plan: ExecutionPlan, input: String, hooks: (any RunHooks)? = nil) async throws -> String {
         // Gather all results
         var results = ""
         for step in plan.steps where step.status == .completed {
@@ -834,7 +868,10 @@ public actor PlanAndExecuteAgent: Agent {
         Synthesize a clear, concise final answer for the user based on the results above.
         """
 
-        return try await generateResponse(prompt: prompt)
+        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [])
+        let response = try await generateResponse(prompt: prompt)
+        await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
+        return response
     }
 
     // MARK: - Helper Methods

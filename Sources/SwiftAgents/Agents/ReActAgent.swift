@@ -82,54 +82,69 @@ public actor ReActAgent: Agent {
     // MARK: - Agent Protocol Methods
 
     /// Executes the agent with the given input and returns a result.
-    /// - Parameter input: The user's input/query.
+    /// - Parameters:
+    ///   - input: The user's input/query.
+    ///   - hooks: Optional hooks for observing agent execution events.
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
-    public func run(_ input: String) async throws -> AgentResult {
+    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
 
-        // Run input guardrails
-        let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration)
-        _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
+        // Notify hooks of agent start
+        await hooks?.onAgentStart(context: nil, agent: self, input: input)
 
-        isCancelled = false
-        let resultBuilder = AgentResult.Builder()
-        _ = resultBuilder.start()
+        do {
+            // Run input guardrails
+            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration)
+            _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
-        // Store input in memory if available
-        if let mem = memory {
-            await mem.add(.user(input))
+            isCancelled = false
+            let resultBuilder = AgentResult.Builder()
+            _ = resultBuilder.start()
+
+            // Store input in memory if available
+            if let mem = memory {
+                await mem.add(.user(input))
+            }
+
+            // Execute the ReAct loop
+            let output = try await executeReActLoop(
+                input: input,
+                resultBuilder: resultBuilder,
+                hooks: hooks
+            )
+
+            _ = resultBuilder.setOutput(output)
+
+            // Run output guardrails BEFORE storing in memory
+            try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
+
+            // Only store output in memory if validation passed
+            if let mem = memory {
+                await mem.add(.assistant(output))
+            }
+
+            let result = resultBuilder.build()
+            await hooks?.onAgentEnd(context: nil, agent: self, result: result)
+            return result
+        } catch {
+            await hooks?.onError(context: nil, agent: self, error: error)
+            throw error
         }
-
-        // Execute the ReAct loop
-        let output = try await executeReActLoop(
-            input: input,
-            resultBuilder: resultBuilder
-        )
-
-        _ = resultBuilder.setOutput(output)
-
-        // Run output guardrails BEFORE storing in memory
-        try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
-
-        // Only store output in memory if validation passed
-        if let mem = memory {
-            await mem.add(.assistant(output))
-        }
-
-        return resultBuilder.build()
     }
 
     /// Streams the agent's execution, yielding events as they occur.
-    /// - Parameter input: The user's input/query.
+    /// - Parameters:
+    ///   - input: The user's input/query.
+    ///   - hooks: Optional hooks for observing agent execution events.
     /// - Returns: An async stream of agent events.
-    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { agent, continuation in
             continuation.yield(.started(input: input))
             do {
-                let result = try await agent.run(input)
+                let result = try await agent.run(input, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {
@@ -171,7 +186,8 @@ public actor ReActAgent: Agent {
 
     private func executeReActLoop(
         input: String,
-        resultBuilder: AgentResult.Builder
+        resultBuilder: AgentResult.Builder,
+        hooks: (any RunHooks)? = nil
     ) async throws -> String {
         var iteration = 0
         var scratchpad = "" // Accumulates Thought-Action-Observation history
@@ -201,7 +217,9 @@ public actor ReActAgent: Agent {
             )
 
             // Step 2: Generate response from model
+            await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [])
             let response = try await generateResponse(prompt: prompt)
+            await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
 
             // Step 3: Parse the response
             let parsed = parseResponse(response)
@@ -222,6 +240,11 @@ public actor ReActAgent: Agent {
                 // Step 4: Execute the tool
                 let startTime = ContinuousClock.now
                 do {
+                    // Notify hooks before tool execution
+                    if let tool = await toolRegistry.tool(named: toolName) {
+                        await hooks?.onToolStart(context: nil, agent: self, tool: tool, arguments: arguments)
+                    }
+
                     let toolResult = try await toolRegistry.execute(
                         toolNamed: toolName,
                         arguments: arguments,
@@ -236,6 +259,11 @@ public actor ReActAgent: Agent {
                         duration: duration
                     )
                     _ = resultBuilder.addToolResult(result)
+
+                    // Notify hooks after successful tool execution
+                    if let tool = await toolRegistry.tool(named: toolName) {
+                        await hooks?.onToolEnd(context: nil, agent: self, tool: tool, result: toolResult)
+                    }
 
                     // Add to scratchpad
                     scratchpad += """

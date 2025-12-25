@@ -307,13 +307,19 @@ public actor ToolRegistry {
         toolNamed name: String,
         arguments: [String: SendableValue],
         agent: (any Agent)? = nil,
-        context: AgentContext? = nil
+        context: AgentContext? = nil,
+        hooks: (any RunHooks)? = nil
     ) async throws -> SendableValue {
         // Check for cancellation before proceeding
         try Task.checkCancellation()
 
         guard let tool = tools[name] else {
             throw AgentError.toolNotFound(name: name)
+        }
+
+        // Notify hooks of tool start
+        if let agent = agent {
+            await hooks?.onToolStart(context: context, agent: agent, tool: tool, arguments: arguments)
         }
 
         // Create a single GuardrailRunner instance for both input and output guardrails
@@ -331,6 +337,11 @@ public actor ToolRegistry {
             // Run output guardrails
             if !tool.outputGuardrails.isEmpty {
                 _ = try await runner.runToolOutputGuardrails(tool.outputGuardrails, data: data, output: result)
+            }
+
+            // Notify hooks of tool end
+            if let agent = agent {
+                await hooks?.onToolEnd(context: context, agent: agent, tool: tool, result: result)
             }
 
             return result

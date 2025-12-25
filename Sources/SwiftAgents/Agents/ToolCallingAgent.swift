@@ -110,54 +110,73 @@ public actor ToolCallingAgent: Agent {
     // MARK: - Agent Protocol Methods
 
     /// Executes the agent with the given input and returns a result.
-    /// - Parameter input: The user's input/query.
+    /// - Parameters:
+    ///   - input: The user's input/query.
+    ///   - hooks: Optional run hooks for observing agent execution events.
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails, or `GuardrailError` if guardrails trigger.
-    public func run(_ input: String) async throws -> AgentResult {
+    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AgentError.invalidInput(reason: "Input cannot be empty")
         }
 
-        // Run input guardrails
-        let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration)
-        _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
+        // Notify hooks of agent start
+        await hooks?.onAgentStart(context: nil, agent: self, input: input)
 
-        isCancelled = false
-        let resultBuilder = AgentResult.Builder()
-        _ = resultBuilder.start()
+        do {
+            // Run input guardrails
+            let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration)
+            _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
-        // Store input in memory if available
-        if let mem = memory {
-            await mem.add(.user(input))
+            isCancelled = false
+            let resultBuilder = AgentResult.Builder()
+            _ = resultBuilder.start()
+
+            // Store input in memory if available
+            if let mem = memory {
+                await mem.add(.user(input))
+            }
+
+            // Execute the tool calling loop
+            let output = try await executeToolCallingLoop(
+                input: input,
+                resultBuilder: resultBuilder,
+                hooks: hooks
+            )
+
+            _ = resultBuilder.setOutput(output)
+
+            // Run output guardrails BEFORE storing in memory
+            try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
+
+            // Only store output in memory if validation passed
+            if let mem = memory {
+                await mem.add(.assistant(output))
+            }
+
+            let result = resultBuilder.build()
+
+            // Notify hooks of agent completion
+            await hooks?.onAgentEnd(context: nil, agent: self, result: result)
+
+            return result
+        } catch {
+            // Notify hooks of error
+            await hooks?.onError(context: nil, agent: self, error: error)
+            throw error
         }
-
-        // Execute the tool calling loop
-        let output = try await executeToolCallingLoop(
-            input: input,
-            resultBuilder: resultBuilder
-        )
-
-        _ = resultBuilder.setOutput(output)
-
-        // Run output guardrails BEFORE storing in memory
-        try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
-
-        // Only store output in memory if validation passed
-        if let mem = memory {
-            await mem.add(.assistant(output))
-        }
-
-        return resultBuilder.build()
     }
 
     /// Streams the agent's execution, yielding events as they occur.
-    /// - Parameter input: The user's input/query.
+    /// - Parameters:
+    ///   - input: The user's input/query.
+    ///   - hooks: Optional run hooks for observing agent execution events.
     /// - Returns: An async stream of agent events.
-    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { agent, continuation in
             continuation.yield(.started(input: input))
             do {
-                let result = try await agent.run(input)
+                let result = try await agent.run(input, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {
@@ -182,7 +201,8 @@ public actor ToolCallingAgent: Agent {
 
     private func executeToolCallingLoop(
         input: String,
-        resultBuilder: AgentResult.Builder
+        resultBuilder: AgentResult.Builder,
+        hooks: (any RunHooks)? = nil
     ) async throws -> String {
         var iteration = 0
         var conversationHistory: [ConversationMessage] = []
@@ -221,10 +241,18 @@ public actor ToolCallingAgent: Agent {
                 guard let provider = inferenceProvider else {
                     throw AgentError.inferenceProviderUnavailable(reason: "No inference provider configured.")
                 }
+
+                // Notify hooks of LLM start
+                await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemMessage, inputMessages: [])
+
                 let content = try await provider.generate(
                     prompt: prompt,
                     options: InferenceOptions(temperature: configuration.temperature, maxTokens: configuration.maxTokens)
                 )
+
+                // Notify hooks of LLM end
+                await hooks?.onLLMEnd(context: nil, agent: self, response: content, usage: nil)
+
                 // Return content - memory storage handled by run() after guardrails
                 return content
             }
@@ -232,7 +260,9 @@ public actor ToolCallingAgent: Agent {
             // Generate response with tool calls
             let response = try await generateWithTools(
                 prompt: prompt,
-                tools: toolDefinitions
+                tools: toolDefinitions,
+                systemPrompt: systemMessage,
+                hooks: hooks
             )
 
             // Check if model wants to call tools
@@ -252,6 +282,12 @@ public actor ToolCallingAgent: Agent {
 
                     let startTime = ContinuousClock.now
                     do {
+                        // Get the tool for hook notification
+                        if let tool = await toolRegistry.tool(named: parsedCall.name) {
+                            // Notify hooks of tool start
+                            await hooks?.onToolStart(context: nil, agent: self, tool: tool, arguments: parsedCall.arguments)
+                        }
+
                         let toolOutput = try await toolRegistry.execute(
                             toolNamed: parsedCall.name,
                             arguments: parsedCall.arguments,
@@ -259,6 +295,11 @@ public actor ToolCallingAgent: Agent {
                             context: nil
                         )
                         let duration = ContinuousClock.now - startTime
+
+                        // Notify hooks of tool end
+                        if let tool = await toolRegistry.tool(named: parsedCall.name) {
+                            await hooks?.onToolEnd(context: nil, agent: self, tool: tool, result: toolOutput)
+                        }
 
                         let result = ToolResult.success(
                             callId: toolCall.id,
@@ -330,7 +371,9 @@ public actor ToolCallingAgent: Agent {
 
     private func generateWithTools(
         prompt: String,
-        tools: [ToolDefinition]
+        tools: [ToolDefinition],
+        systemPrompt: String,
+        hooks: (any RunHooks)? = nil
     ) async throws -> InferenceResponse {
         guard let provider = inferenceProvider else {
             throw AgentError.inferenceProviderUnavailable(
@@ -343,11 +386,20 @@ public actor ToolCallingAgent: Agent {
             maxTokens: configuration.maxTokens
         )
 
-        return try await provider.generateWithToolCalls(
+        // Notify hooks of LLM start
+        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [])
+
+        let response = try await provider.generateWithToolCalls(
             prompt: prompt,
             tools: tools,
             options: options
         )
+
+        // Notify hooks of LLM end
+        let responseContent = response.content ?? ""
+        await hooks?.onLLMEnd(context: nil, agent: self, response: responseContent, usage: response.usage)
+
+        return response
     }
 }
 

@@ -476,11 +476,13 @@ public actor ParallelGroup: Agent {
     /// `maxConcurrency` limit if set. Results are merged using the
     /// configured merge strategy.
     ///
-    /// - Parameter input: The input to send to all agents.
+    /// - Parameters:
+    ///   - input: The input to send to all agents.
+    ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: The merged result from all agents.
     /// - Throws: `OrchestrationError.allAgentsFailed` if all agents fail,
     ///           or rethrows the first agent error if `shouldContinueOnError` is false.
-    public func run(_ input: String) async throws -> AgentResult {
+    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !agents.isEmpty else {
             throw OrchestrationError.noAgentsConfigured
         }
@@ -527,7 +529,7 @@ public actor ParallelGroup: Agent {
                 // Start agent execution
                 group.addTask {
                     do {
-                        let result = try await agent.run(input)
+                        let result = try await agent.run(input, hooks: hooks)
                         return (name, .success(result))
                     } catch {
                         return (name, .failure(error))
@@ -581,13 +583,15 @@ public actor ParallelGroup: Agent {
     /// Note: Events from all agents are interleaved as they occur.
     /// The final event will be `.completed` with the merged result.
     ///
-    /// - Parameter input: The input to send to all agents.
+    /// - Parameters:
+    ///   - input: The input to send to all agents.
+    ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: An async stream of agent events.
-    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { actor, continuation in
             continuation.yield(.started(input: input))
             do {
-                let result = try await actor.run(input)
+                let result = try await actor.run(input, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {

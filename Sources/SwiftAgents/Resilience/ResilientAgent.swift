@@ -130,7 +130,7 @@ public actor ResilientAgent: Agent {
 
     // MARK: - Agent Protocol
 
-    public func run(_ input: String) async throws -> AgentResult {
+    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         if isCancelled {
             throw AgentError.cancelled
         }
@@ -140,9 +140,9 @@ public actor ResilientAgent: Agent {
         do {
             // Apply timeout if configured
             let result: AgentResult = if let timeout = timeoutDuration {
-                try await executeWithTimeout(input, timeout: timeout)
+                try await executeWithTimeout(input, hooks: hooks, timeout: timeout)
             } else {
-                try await executeWithResilience(input)
+                try await executeWithResilience(input, hooks: hooks)
             }
 
             // Add resilience metadata
@@ -153,7 +153,7 @@ public actor ResilientAgent: Agent {
             // Try fallback if available
             if let fallback = fallbackAgent {
                 do {
-                    let fallbackResult = try await fallback.run(input)
+                    let fallbackResult = try await fallback.run(input, hooks: hooks)
                     let duration = ContinuousClock.now - startTime
                     return addResilienceMetadata(to: fallbackResult, duration: duration, usedFallback: true, primaryError: error)
                 } catch let fallbackError {
@@ -166,11 +166,11 @@ public actor ResilientAgent: Agent {
         }
     }
 
-    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { agent, continuation in
             continuation.yield(.started(input: input))
             do {
-                let result = try await agent.run(input)
+                let result = try await agent.run(input, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {
@@ -242,11 +242,11 @@ public actor ResilientAgent: Agent {
     // MARK: - Private Methods
 
     /// Executes the agent with timeout protection.
-    private func executeWithTimeout(_ input: String, timeout: Duration) async throws -> AgentResult {
+    private func executeWithTimeout(_ input: String, hooks: (any RunHooks)?, timeout: Duration) async throws -> AgentResult {
         do {
             return try await withThrowingTaskGroup(of: AgentResult.self) { group in
                 group.addTask {
-                    try await self.executeWithResilience(input)
+                    try await self.executeWithResilience(input, hooks: hooks)
                 }
 
                 group.addTask {
@@ -269,15 +269,15 @@ public actor ResilientAgent: Agent {
     }
 
     /// Executes the agent with retry and circuit breaker protection.
-    private func executeWithResilience(_ input: String) async throws -> AgentResult {
+    private func executeWithResilience(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
         do {
             // Wrap execution in circuit breaker if configured
             if let breaker = circuitBreaker {
                 return try await breaker.execute {
-                    try await self.executeWithRetry(input)
+                    try await self.executeWithRetry(input, hooks: hooks)
                 }
             } else {
-                return try await executeWithRetry(input)
+                return try await executeWithRetry(input, hooks: hooks)
             }
         } catch let error as AgentError {
             throw error
@@ -288,14 +288,14 @@ public actor ResilientAgent: Agent {
     }
 
     /// Executes the agent with retry protection.
-    private func executeWithRetry(_ input: String) async throws -> AgentResult {
+    private func executeWithRetry(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
         do {
             if let policy = retryPolicy {
                 return try await policy.execute {
-                    try await self.base.run(input)
+                    try await self.base.run(input, hooks: hooks)
                 }
             } else {
-                return try await base.run(input)
+                return try await base.run(input, hooks: hooks)
             }
         } catch let error as AgentError {
             throw error

@@ -206,11 +206,13 @@ public actor SequentialChain: Agent {
     /// - Sum of all iteration counts
     /// - Total duration
     ///
-    /// - Parameter input: The initial input for the first agent.
+    /// - Parameters:
+    ///   - input: The initial input for the first agent.
+    ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: The combined result of all agents.
     /// - Throws: `OrchestrationError.noAgentsConfigured` if no agents are configured,
     ///           or `AgentError.cancelled` if execution was cancelled.
-    public func run(_ input: String) async throws -> AgentResult {
+    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !chainedAgents.isEmpty else {
             throw AgentError.invalidInput(reason: "No agents configured in sequential chain")
         }
@@ -235,7 +237,7 @@ public actor SequentialChain: Agent {
             await context?.recordExecution(agentName: agentName)
 
             // Run the agent
-            let agentResult = try await agent.run(currentInput)
+            let agentResult = try await agent.run(currentInput, hooks: hooks)
 
             // Accumulate tool calls and iterations
             for toolCall in agentResult.toolCalls {
@@ -271,13 +273,15 @@ public actor SequentialChain: Agent {
     /// Yields events from each agent as they execute in sequence.
     /// Each agent's stream is fully consumed before moving to the next.
     ///
-    /// - Parameter input: The initial input for the first agent.
+    /// - Parameters:
+    ///   - input: The initial input for the first agent.
+    ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: An async stream of agent events.
-    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { actor, continuation in
             continuation.yield(.started(input: input))
             do {
-                let result = try await actor.run(input)
+                let result = try await actor.run(input, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {

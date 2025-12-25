@@ -410,10 +410,12 @@ public actor AgentRouter: Agent {
 
     /// Executes the router by finding a matching route and delegating to its agent.
     ///
-    /// - Parameter input: The user's input/query.
+    /// - Parameters:
+    ///   - input: The user's input/query.
+    ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: The result from the selected agent.
     /// - Throws: `OrchestrationError.routingFailed` if no route matches and no fallback exists.
-    public func run(_ input: String) async throws -> AgentResult {
+    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         if isCancelled {
             throw AgentError.cancelled
         }
@@ -426,7 +428,7 @@ public actor AgentRouter: Agent {
         guard let route = selectedRoute else {
             // No route matched - try fallback
             if let fallback = fallbackAgent {
-                return try await fallback.run(input)
+                return try await fallback.run(input, hooks: hooks)
             } else {
                 throw OrchestrationError.routingFailed(
                     reason: "No route matched input and no fallback agent configured"
@@ -435,7 +437,7 @@ public actor AgentRouter: Agent {
         }
 
         // Execute the matched route's agent
-        let result = try await route.agent.run(input)
+        let result = try await route.agent.run(input, hooks: hooks)
 
         // Add routing metadata
         let duration = ContinuousClock.now - startTime
@@ -456,13 +458,15 @@ public actor AgentRouter: Agent {
 
     /// Streams the execution by delegating to the matched route's agent.
     ///
-    /// - Parameter input: The user's input/query.
+    /// - Parameters:
+    ///   - input: The user's input/query.
+    ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: An async stream of agent events.
-    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { actor, continuation in
             continuation.yield(.started(input: input))
             do {
-                let result = try await actor.run(input)
+                let result = try await actor.run(input, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {

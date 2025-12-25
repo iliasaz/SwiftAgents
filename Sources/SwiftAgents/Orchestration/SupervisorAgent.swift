@@ -532,7 +532,7 @@ public actor SupervisorAgent: Agent {
 
     // MARK: - Agent Protocol Methods
 
-    public func run(_ input: String) async throws -> AgentResult {
+    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         let builder = AgentResult.Builder()
         builder.start()
 
@@ -554,7 +554,7 @@ public actor SupervisorAgent: Agent {
             guard let selectedEntry = agentRegistry.first(where: { $0.name == decision.selectedAgentName }) else {
                 // Agent not found, use fallback if available
                 if let fallback = fallbackAgent {
-                    let result = try await fallback.run(input)
+                    let result = try await fallback.run(input, hooks: hooks)
                     builder.setOutput(result.output)
                     builder.setMetadata("routing_decision", .string("fallback"))
                     builder.setMetadata("routing_confidence", .double(0.0))
@@ -572,7 +572,7 @@ public actor SupervisorAgent: Agent {
             }
 
             // Execute the selected agent
-            let result = try await selectedEntry.agent.run(input)
+            let result = try await selectedEntry.agent.run(input, hooks: hooks)
 
             // Update context with result
             if let context {
@@ -600,7 +600,7 @@ public actor SupervisorAgent: Agent {
         } catch {
             // If routing fails and we have a fallback, use it
             if let fallback = fallbackAgent, error is AgentError {
-                let result = try await fallback.run(input)
+                let result = try await fallback.run(input, hooks: hooks)
                 builder.setOutput(result.output)
                 builder.setMetadata("routing_decision", .string("fallback_after_error"))
                 builder.setMetadata("routing_error", .string(error.localizedDescription))
@@ -616,11 +616,11 @@ public actor SupervisorAgent: Agent {
         }
     }
 
-    nonisolated public func stream(_ input: String) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { actor, continuation in
             continuation.yield(.started(input: input))
             do {
-                let result = try await actor.run(input)
+                let result = try await actor.run(input, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {
@@ -651,14 +651,15 @@ public actor SupervisorAgent: Agent {
     /// - Parameters:
     ///   - agentName: The name of the agent to execute.
     ///   - input: The input to pass to the agent.
+    ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: The agent's result.
     /// - Throws: `AgentError.internalError` if agent not found.
-    public func executeAgent(named agentName: String, input: String) async throws -> AgentResult {
+    public func executeAgent(named agentName: String, input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard let entry = agentRegistry.first(where: { $0.name == agentName }) else {
             throw AgentError.internalError(reason: "Agent '\(agentName)' not found")
         }
 
-        return try await entry.agent.run(input)
+        return try await entry.agent.run(input, hooks: hooks)
     }
 
     // MARK: Private

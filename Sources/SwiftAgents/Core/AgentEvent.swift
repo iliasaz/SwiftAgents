@@ -81,6 +81,66 @@ public enum AgentEvent: Sendable {
 
     /// Iteration completed.
     case iterationCompleted(number: Int)
+
+    // MARK: - Decision Events
+
+    /// Agent made a decision
+    case decision(decision: String, options: [String]?)
+
+    /// Agent created or updated a plan
+    case planUpdated(plan: String, stepCount: Int)
+
+    // MARK: - Handoff Events
+
+    /// Agent handoff initiated
+    case handoffRequested(fromAgent: String, toAgent: String, reason: String?)
+
+    /// Agent handoff completed
+    case handoffCompleted(fromAgent: String, toAgent: String)
+
+    // MARK: - Guardrail Events
+
+    /// Guardrail check started
+    case guardrailStarted(name: String, type: GuardrailType)
+
+    /// Guardrail check passed
+    case guardrailPassed(name: String, type: GuardrailType)
+
+    /// Guardrail tripwire triggered
+    case guardrailTriggered(name: String, type: GuardrailType, message: String?)
+
+    // MARK: - Memory Events
+
+    /// Memory was accessed
+    case memoryAccessed(operation: MemoryOperation, count: Int)
+
+    // MARK: - LLM Events
+
+    /// LLM call started
+    case llmStarted(model: String?, promptTokens: Int?)
+
+    /// LLM call completed
+    case llmCompleted(model: String?, promptTokens: Int?, completionTokens: Int?, duration: TimeInterval)
+}
+
+// MARK: - GuardrailType
+
+/// Type of guardrail check
+public enum GuardrailType: String, Sendable, Codable {
+    case input
+    case output
+    case toolInput
+    case toolOutput
+}
+
+// MARK: - MemoryOperation
+
+/// Type of memory operation
+public enum MemoryOperation: String, Sendable, Codable {
+    case read
+    case write
+    case search
+    case clear
 }
 
 // MARK: - ToolCall
@@ -238,6 +298,26 @@ extension AgentEvent: Equatable {
             lhsNumber == rhsNumber
         case let (.iterationCompleted(lhsNumber), .iterationCompleted(rhsNumber)):
             lhsNumber == rhsNumber
+        case let (.decision(lhsDecision, lhsOptions), .decision(rhsDecision, rhsOptions)):
+            lhsDecision == rhsDecision && lhsOptions == rhsOptions
+        case let (.planUpdated(lhsPlan, lhsCount), .planUpdated(rhsPlan, rhsCount)):
+            lhsPlan == rhsPlan && lhsCount == rhsCount
+        case let (.handoffRequested(lhsFrom, lhsTo, lhsReason), .handoffRequested(rhsFrom, rhsTo, rhsReason)):
+            lhsFrom == rhsFrom && lhsTo == rhsTo && lhsReason == rhsReason
+        case let (.handoffCompleted(lhsFrom, lhsTo), .handoffCompleted(rhsFrom, rhsTo)):
+            lhsFrom == rhsFrom && lhsTo == rhsTo
+        case let (.guardrailStarted(lhsName, lhsType), .guardrailStarted(rhsName, rhsType)):
+            lhsName == rhsName && lhsType == rhsType
+        case let (.guardrailPassed(lhsName, lhsType), .guardrailPassed(rhsName, rhsType)):
+            lhsName == rhsName && lhsType == rhsType
+        case let (.guardrailTriggered(lhsName, lhsType, lhsMsg), .guardrailTriggered(rhsName, rhsType, rhsMsg)):
+            lhsName == rhsName && lhsType == rhsType && lhsMsg == rhsMsg
+        case let (.memoryAccessed(lhsOp, lhsCount), .memoryAccessed(rhsOp, rhsCount)):
+            lhsOp == rhsOp && lhsCount == rhsCount
+        case let (.llmStarted(lhsModel, lhsTokens), .llmStarted(rhsModel, rhsTokens)):
+            lhsModel == rhsModel && lhsTokens == rhsTokens
+        case let (.llmCompleted(lhsModel, lhsPrompt, lhsCompletion, lhsDuration), .llmCompleted(rhsModel, rhsPrompt, rhsCompletion, rhsDuration)):
+            lhsModel == rhsModel && lhsPrompt == rhsPrompt && lhsCompletion == rhsCompletion && lhsDuration == rhsDuration
         default:
             false
         }
