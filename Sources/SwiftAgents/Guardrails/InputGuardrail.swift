@@ -6,6 +6,9 @@
 
 import Foundation
 
+/// Type alias for input validation handler closures.
+public typealias InputValidationHandler = @Sendable (String, AgentContext?) async throws -> GuardrailResult
+
 // MARK: - InputGuardrail
 
 /// Protocol for input validation guardrails.
@@ -242,5 +245,32 @@ public struct InputGuardrailBuilder: Sendable {
         let finalHandler = currentHandler ?? { _, _ in .passed() }
 
         return ClosureInputGuardrail(name: finalName, handler: finalHandler)
+    }
+}
+
+// MARK: - Convenience Factories
+
+public extension ClosureInputGuardrail {
+    /// Creates a guardrail that checks input length.
+    static func maxLength(_ maxLength: Int, name: String = "MaxLengthGuardrail") -> ClosureInputGuardrail {
+        ClosureInputGuardrail(name: name) { input, _ in
+            if input.count > maxLength {
+                return .tripwire(
+                    message: "Input exceeds maximum length of \(maxLength)",
+                    metadata: ["length": .int(input.count), "limit": .int(maxLength)]
+                )
+            }
+            return .passed()
+        }
+    }
+
+    /// Creates a guardrail that rejects empty inputs.
+    static func notEmpty(name: String = "NotEmptyGuardrail") -> ClosureInputGuardrail {
+        ClosureInputGuardrail(name: name) { input, _ in
+            if input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return .tripwire(message: "Input cannot be empty")
+            }
+            return .passed()
+        }
     }
 }

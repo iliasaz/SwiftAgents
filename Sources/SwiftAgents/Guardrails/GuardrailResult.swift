@@ -40,14 +40,39 @@ public struct GuardrailResult: Sendable, Equatable {
     public let tripwireTriggered: Bool
 
     /// Optional diagnostic information about what was detected or validated.
-    /// Can contain structured data about violations, patterns, or analysis results.
+    ///
+    /// Use this to provide structured data about the validation result:
+    /// - For tripwires: Details about what triggered the violation (e.g., detected patterns, PII types)
+    /// - For passes: Optional summary of what was checked
+    ///
+    /// Example:
+    /// ```swift
+    /// outputInfo: .dictionary([
+    ///     "violationType": .string("PII_DETECTED"),
+    ///     "patterns": .array([.string("SSN"), .string("email")])
+    /// ])
+    /// ```
     public let outputInfo: SendableValue?
 
     /// Optional human-readable message describing the result.
     public let message: String?
 
-    /// Additional metadata about the check execution.
-    /// May include timing information, model versions, or other diagnostic data.
+    /// Additional metadata about the guardrail execution.
+    ///
+    /// Use this for operational/diagnostic data about the guardrail execution itself:
+    /// - Execution time
+    /// - Model version used
+    /// - Confidence scores
+    /// - Cache hits
+    ///
+    /// Example:
+    /// ```swift
+    /// metadata: [
+    ///     "executionTimeMs": .double(42.5),
+    ///     "modelVersion": .string("v2.1"),
+    ///     "cacheHit": .bool(true)
+    /// ]
+    /// ```
     public let metadata: [String: SendableValue]
 
     // MARK: - Initializer

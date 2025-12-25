@@ -5,6 +5,9 @@
 
 import Foundation
 
+/// Type alias for output validation handler closures.
+public typealias OutputValidationHandler = @Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult
+
 // MARK: - OutputGuardrail
 
 /// Protocol for validating agent output before returning to users.
@@ -272,5 +275,22 @@ public struct OutputGuardrailBuilder: Sendable {
         let finalHandler = currentHandler ?? { _, _, _ in .passed() }
 
         return ClosureOutputGuardrail(name: finalName, handler: finalHandler)
+    }
+}
+
+// MARK: - Convenience Factories
+
+public extension ClosureOutputGuardrail {
+    /// Creates a guardrail that checks output length.
+    static func maxLength(_ maxLength: Int, name: String = "MaxOutputLengthGuardrail") -> ClosureOutputGuardrail {
+        ClosureOutputGuardrail(name: name) { output, _, _ in
+            if output.count > maxLength {
+                return .tripwire(
+                    message: "Output exceeds maximum length of \(maxLength)",
+                    metadata: ["length": .int(output.count), "limit": .int(maxLength)]
+                )
+            }
+            return .passed()
+        }
     }
 }

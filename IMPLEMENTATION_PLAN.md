@@ -1,561 +1,2155 @@
-# SwiftAgents API Enhancement Implementation Plan
+# SwiftAgents Comprehensive Implementation Plan
 
-This document outlines the implementation plan for enhancing the SwiftAgents framework API through improved generics and DSL patterns.
-
-## Overview
-
-The enhancements are organized into 10 features, prioritized by impact and dependency order. Each feature includes TDD tests located in `Tests/SwiftAgentsTests/DSL/`.
-
-## Implementation Phases
-
-### Phase 1: Foundation (Week 1-2)
-Core types and protocols that other features depend on.
-
-### Phase 2: DSL Builders (Week 2-3)
-Result builders and fluent APIs for declarative construction.
-
-### Phase 3: Composition (Week 3-4)
-Operators and patterns for combining agents.
-
-### Phase 4: Streaming & Resilience (Week 4-5)
-Stream operations and fault tolerance patterns.
+> Complete context for implementing OpenAI SDK parity - Phases 1-6
 
 ---
 
-## Feature 1: TypedTool Protocol
-
-**Priority:** High
-**Tests:** `TypedToolTests.swift`
-**Location:** `Sources/SwiftAgents/Tools/TypedTool.swift`
-
-### Implementation Steps
-
-1. **Define TypedTool protocol with associated Output type**
-   ```swift
-   public protocol TypedTool<Output>: Tool {
-       associatedtype Output: Sendable & Codable
-       func executeTyped(arguments: [String: SendableValue]) async throws -> Output
-   }
-   ```
-
-2. **Add default Tool.execute implementation via protocol extension**
-   - Encode Output to SendableValue using Codable
-   - Handle encoding errors gracefully
-
-3. **Add SendableValue encoding/decoding for Codable types**
-   ```swift
-   extension SendableValue {
-       init<T: Encodable>(encoding value: T) throws
-       func decode<T: Decodable>() throws -> T
-   }
-   ```
-
-4. **Update ToolRegistry to work with TypedTool**
-   - Add generic execute method that returns typed output
-   - Maintain backward compatibility with existing Tool protocol
-
-### Files to Create/Modify
-- `Sources/SwiftAgents/Tools/TypedTool.swift` (new)
-- `Sources/SwiftAgents/Core/SendableValue.swift` (modify)
-- `Sources/SwiftAgents/Tools/Tool.swift` (modify)
+## Table of Contents
+1. [Phase 1: Guardrails System](#phase-1-guardrails-system)
+2. [Phase 2: Streaming Events & RunHooks](#phase-2-streaming-events--runhooks)
+3. [Phase 3: Session & TraceContext](#phase-3-session--tracecontext)
+4. [Phase 4: Enhanced Handoffs & MultiProvider](#phase-4-enhanced-handoffs--multiprovider)
+5. [Phase 5: Polish Features](#phase-5-polish-features)
+6. [Phase 6: Future Enhancements](#phase-6-future-enhancements)
 
 ---
 
-## Feature 2: ToolParameterBuilder DSL
+## Existing SwiftAgents Patterns to Follow
 
-**Priority:** High
-**Tests:** `ToolParameterBuilderTests.swift`
-**Location:** `Sources/SwiftAgents/Tools/ToolParameterBuilder.swift`
+### File Organization
+```
+Sources/SwiftAgents/
+├── Core/           # Protocols, base types, errors
+├── Agents/         # Agent implementations
+├── Tools/          # Tool system
+├── Memory/         # Memory implementations
+├── Orchestration/  # Multi-agent coordination
+├── Observability/  # Tracing, metrics
+├── Providers/      # Inference providers
+├── Resilience/     # Retry, circuit breaker
+└── Guardrails/     # NEW - Create this directory
+```
 
-### Implementation Steps
+### Naming Conventions
+- Protocols: `SomethingProtocol` or just noun (e.g., `Tracer`, `Tool`)
+- Actors: Use for shared mutable state
+- Structs: Prefer for data types
+- Errors: `SomethingError` enum with `LocalizedError` conformance
 
-1. **Create ToolParameterBuilder result builder**
-   ```swift
-   @resultBuilder
-   public struct ToolParameterBuilder {
-       public static func buildBlock(_ params: ToolParameter...) -> [ToolParameter]
-       public static func buildOptional(_ param: ToolParameter?) -> [ToolParameter]
-       public static func buildEither(first: ToolParameter) -> [ToolParameter]
-       public static func buildEither(second: ToolParameter) -> [ToolParameter]
-       public static func buildArray(_ arrays: [[ToolParameter]]) -> [ToolParameter]
-   }
-   ```
-
-2. **Create Parameter factory function**
-   ```swift
-   public func Parameter(
-       _ name: String,
-       description: String,
-       type: ToolParameter.ParameterType,
-       required: Bool = true,
-       default: SendableValue? = nil
-   ) -> ToolParameter
-   ```
-
-3. **Add convenience overloads for common default types**
-   - Integer defaults
-   - String defaults
-   - Boolean defaults
-
-4. **Update Tool protocol to support builder syntax**
-   - Add `@ToolParameterBuilder` attribute support
-
-### Files to Create/Modify
-- `Sources/SwiftAgents/Tools/ToolParameterBuilder.swift` (new)
-- `Sources/SwiftAgents/Tools/Tool.swift` (modify)
+### Existing Key Files to Reference
+- **Protocol Pattern**: `Sources/SwiftAgents/Tools/Tool.swift`
+- **Actor Pattern**: `Sources/SwiftAgents/Tools/Tool.swift` (ToolRegistry)
+- **Error Pattern**: `Sources/SwiftAgents/Core/AgentError.swift`
+- **Builder Pattern**: `Sources/SwiftAgents/Agents/AgentBuilder.swift`
+- **Event Pattern**: `Sources/SwiftAgents/Core/AgentEvent.swift`
 
 ---
 
-## Feature 3: AgentBuilder DSL
+## Phase 1: Guardrails System
 
-**Priority:** Medium
-**Tests:** `AgentBuilderTests.swift`
-**Location:** `Sources/SwiftAgents/Core/AgentBuilder.swift`
+### Overview
+Implement input/output validation at agent and tool levels with tripwire triggers that can halt execution.
 
-### Implementation Steps
+### OpenAI Reference Implementation
 
-1. **Define AgentComponent protocol and implementations**
-   ```swift
-   public protocol AgentComponent {}
+```python
+# OpenAI's GuardrailFunctionOutput
+@dataclass
+class GuardrailFunctionOutput:
+    output_info: Any = None           # Additional info about the check
+    tripwire_triggered: bool = False  # If True, raises exception
 
-   public struct Instructions: AgentComponent { ... }
-   public struct Tools: AgentComponent { ... }
-   public struct Memory: AgentComponent { ... }
-   public struct Configuration: AgentComponent { ... }
-   ```
+# OpenAI's InputGuardrail
+@dataclass
+class InputGuardrail(Generic[TContext]):
+    guardrail_function: Callable[
+        [RunContextWrapper[TContext], Agent[Any], str | list[TResponseInputItem]],
+        MaybeAwaitable[GuardrailFunctionOutput],
+    ]
+    name: str | None = None
+    run_in_parallel: bool = True  # Run concurrently with agent or before
 
-2. **Create AgentBuilder result builder**
-   ```swift
-   @resultBuilder
-   public struct AgentBuilder {
-       public static func buildBlock(_ components: AgentComponent...) -> [AgentComponent]
-   }
-   ```
+# OpenAI's OutputGuardrail
+@dataclass
+class OutputGuardrail(Generic[TContext]):
+    guardrail_function: Callable[
+        [RunContextWrapper[TContext], Agent[Any], Any],
+        MaybeAwaitable[GuardrailFunctionOutput],
+    ]
+    name: str | None = None
 
-3. **Create ToolArrayBuilder for Tools component**
-   ```swift
-   @resultBuilder
-   public struct ToolArrayBuilder {
-       public static func buildBlock(_ tools: any Tool...) -> [any Tool]
-   }
-   ```
+# OpenAI's ToolInputGuardrail
+@dataclass
+class ToolInputGuardrail:
+    guardrail_function: Callable[
+        [ToolInputGuardrailData],
+        MaybeAwaitable[ToolGuardrailFunctionOutput],
+    ]
+    name: str | None = None
 
-4. **Add initializer to ReActAgent using builder**
-   ```swift
-   public init(@AgentBuilder _ content: () -> [AgentComponent])
-   ```
+# OpenAI's exceptions
+class InputGuardrailTripwireTriggered(Exception):
+    guardrail: InputGuardrail
+    output: GuardrailFunctionOutput
 
-### Files to Create/Modify
-- `Sources/SwiftAgents/Core/AgentBuilder.swift` (new)
-- `Sources/SwiftAgents/Agents/ReActAgent.swift` (modify)
+class OutputGuardrailTripwireTriggered(Exception):
+    guardrail: OutputGuardrail
+    agent: Agent
+    agent_output: Any
+    output: GuardrailFunctionOutput
+```
+
+### SwiftAgents Implementation
+
+#### File 1: `Sources/SwiftAgents/Guardrails/GuardrailResult.swift`
+
+```swift
+import Foundation
+
+/// Result of a guardrail validation check
+public struct GuardrailResult: Sendable {
+    /// Whether the tripwire was triggered (halts execution if true)
+    public let tripwireTriggered: Bool
+
+    /// Additional information about the validation result
+    public let outputInfo: SendableValue?
+
+    /// Optional message explaining the result
+    public let message: String?
+
+    /// Metadata about the validation
+    public let metadata: [String: SendableValue]
+
+    public init(
+        tripwireTriggered: Bool,
+        outputInfo: SendableValue? = nil,
+        message: String? = nil,
+        metadata: [String: SendableValue] = [:]
+    ) {
+        self.tripwireTriggered = tripwireTriggered
+        self.outputInfo = outputInfo
+        self.message = message
+        self.metadata = metadata
+    }
+
+    /// Convenience for passing validation
+    public static func pass(message: String? = nil) -> GuardrailResult {
+        GuardrailResult(tripwireTriggered: false, message: message)
+    }
+
+    /// Convenience for failing validation
+    public static func fail(
+        message: String,
+        outputInfo: SendableValue? = nil
+    ) -> GuardrailResult {
+        GuardrailResult(
+            tripwireTriggered: true,
+            outputInfo: outputInfo,
+            message: message
+        )
+    }
+}
+```
+
+#### File 2: `Sources/SwiftAgents/Guardrails/InputGuardrail.swift`
+
+```swift
+import Foundation
+
+/// Protocol for validating agent inputs before execution
+public protocol InputGuardrail: Sendable {
+    /// Unique name for this guardrail (used in tracing)
+    var name: String { get }
+
+    /// Whether to run in parallel with the agent start (true) or before (false)
+    var runInParallel: Bool { get }
+
+    /// Validate the input before agent execution
+    /// - Parameters:
+    ///   - input: The user input string
+    ///   - agent: The agent that will process the input
+    ///   - context: The execution context
+    /// - Returns: GuardrailResult indicating pass/fail
+    func validate(
+        _ input: String,
+        agent: any Agent,
+        context: AgentContext
+    ) async throws -> GuardrailResult
+}
+
+// Default implementation
+public extension InputGuardrail {
+    var runInParallel: Bool { true }
+}
+
+/// Concrete input guardrail using a closure
+public struct ClosureInputGuardrail: InputGuardrail {
+    public let name: String
+    public let runInParallel: Bool
+    private let validation: @Sendable (String, any Agent, AgentContext) async throws -> GuardrailResult
+
+    public init(
+        name: String,
+        runInParallel: Bool = true,
+        validation: @escaping @Sendable (String, any Agent, AgentContext) async throws -> GuardrailResult
+    ) {
+        self.name = name
+        self.runInParallel = runInParallel
+        self.validation = validation
+    }
+
+    public func validate(
+        _ input: String,
+        agent: any Agent,
+        context: AgentContext
+    ) async throws -> GuardrailResult {
+        try await validation(input, agent, context)
+    }
+}
+
+/// Builder for creating input guardrails with fluent API
+public struct InputGuardrailBuilder {
+    private var name: String
+    private var runInParallel: Bool = true
+    private var validation: (@Sendable (String, any Agent, AgentContext) async throws -> GuardrailResult)?
+
+    public init(name: String) {
+        self.name = name
+    }
+
+    public func runInParallel(_ value: Bool) -> InputGuardrailBuilder {
+        var copy = self
+        copy.runInParallel = value
+        return copy
+    }
+
+    public func validate(
+        _ validation: @escaping @Sendable (String, any Agent, AgentContext) async throws -> GuardrailResult
+    ) -> InputGuardrailBuilder {
+        var copy = self
+        copy.validation = validation
+        return copy
+    }
+
+    public func build() -> ClosureInputGuardrail {
+        guard let validation = validation else {
+            fatalError("InputGuardrail requires a validation closure")
+        }
+        return ClosureInputGuardrail(
+            name: name,
+            runInParallel: runInParallel,
+            validation: validation
+        )
+    }
+}
+```
+
+#### File 3: `Sources/SwiftAgents/Guardrails/OutputGuardrail.swift`
+
+```swift
+import Foundation
+
+/// Protocol for validating agent outputs after execution
+public protocol OutputGuardrail: Sendable {
+    /// Unique name for this guardrail
+    var name: String { get }
+
+    /// Validate the output after agent execution
+    /// - Parameters:
+    ///   - output: The agent's output (typically AgentResult or String)
+    ///   - agent: The agent that produced the output
+    ///   - context: The execution context
+    /// - Returns: GuardrailResult indicating pass/fail
+    func validate(
+        _ output: AgentResult,
+        agent: any Agent,
+        context: AgentContext
+    ) async throws -> GuardrailResult
+}
+
+/// Concrete output guardrail using a closure
+public struct ClosureOutputGuardrail: OutputGuardrail {
+    public let name: String
+    private let validation: @Sendable (AgentResult, any Agent, AgentContext) async throws -> GuardrailResult
+
+    public init(
+        name: String,
+        validation: @escaping @Sendable (AgentResult, any Agent, AgentContext) async throws -> GuardrailResult
+    ) {
+        self.name = name
+        self.validation = validation
+    }
+
+    public func validate(
+        _ output: AgentResult,
+        agent: any Agent,
+        context: AgentContext
+    ) async throws -> GuardrailResult {
+        try await validation(output, agent, context)
+    }
+}
+```
+
+#### File 4: `Sources/SwiftAgents/Guardrails/ToolGuardrails.swift`
+
+```swift
+import Foundation
+
+/// Data passed to tool input guardrails
+public struct ToolGuardrailData: Sendable {
+    public let toolName: String
+    public let arguments: [String: SendableValue]
+    public let agent: any Agent
+    public let context: AgentContext
+
+    public init(
+        toolName: String,
+        arguments: [String: SendableValue],
+        agent: any Agent,
+        context: AgentContext
+    ) {
+        self.toolName = toolName
+        self.arguments = arguments
+        self.agent = agent
+        self.context = context
+    }
+}
+
+/// Data passed to tool output guardrails (extends input data with output)
+public struct ToolOutputGuardrailData: Sendable {
+    public let toolName: String
+    public let arguments: [String: SendableValue]
+    public let output: SendableValue
+    public let agent: any Agent
+    public let context: AgentContext
+
+    public init(
+        toolName: String,
+        arguments: [String: SendableValue],
+        output: SendableValue,
+        agent: any Agent,
+        context: AgentContext
+    ) {
+        self.toolName = toolName
+        self.arguments = arguments
+        self.output = output
+        self.agent = agent
+        self.context = context
+    }
+}
+
+/// Protocol for validating tool inputs before execution
+public protocol ToolInputGuardrail: Sendable {
+    var name: String { get }
+    func validate(_ data: ToolGuardrailData) async throws -> GuardrailResult
+}
+
+/// Protocol for validating tool outputs after execution
+public protocol ToolOutputGuardrail: Sendable {
+    var name: String { get }
+    func validate(_ data: ToolOutputGuardrailData) async throws -> GuardrailResult
+}
+
+/// Concrete tool input guardrail
+public struct ClosureToolInputGuardrail: ToolInputGuardrail {
+    public let name: String
+    private let validation: @Sendable (ToolGuardrailData) async throws -> GuardrailResult
+
+    public init(
+        name: String,
+        validation: @escaping @Sendable (ToolGuardrailData) async throws -> GuardrailResult
+    ) {
+        self.name = name
+        self.validation = validation
+    }
+
+    public func validate(_ data: ToolGuardrailData) async throws -> GuardrailResult {
+        try await validation(data)
+    }
+}
+
+/// Concrete tool output guardrail
+public struct ClosureToolOutputGuardrail: ToolOutputGuardrail {
+    public let name: String
+    private let validation: @Sendable (ToolOutputGuardrailData) async throws -> GuardrailResult
+
+    public init(
+        name: String,
+        validation: @escaping @Sendable (ToolOutputGuardrailData) async throws -> GuardrailResult
+    ) {
+        self.name = name
+        self.validation = validation
+    }
+
+    public func validate(_ data: ToolOutputGuardrailData) async throws -> GuardrailResult {
+        try await validation(data)
+    }
+}
+```
+
+#### File 5: `Sources/SwiftAgents/Guardrails/GuardrailError.swift`
+
+```swift
+import Foundation
+
+/// Errors related to guardrail execution
+public enum GuardrailError: Error, Sendable, LocalizedError {
+    /// Input guardrail tripwire was triggered
+    case inputTripwireTriggered(
+        guardrailName: String,
+        message: String?,
+        outputInfo: SendableValue?
+    )
+
+    /// Output guardrail tripwire was triggered
+    case outputTripwireTriggered(
+        guardrailName: String,
+        agentName: String,
+        message: String?,
+        outputInfo: SendableValue?
+    )
+
+    /// Tool input guardrail tripwire was triggered
+    case toolInputTripwireTriggered(
+        guardrailName: String,
+        toolName: String,
+        message: String?,
+        outputInfo: SendableValue?
+    )
+
+    /// Tool output guardrail tripwire was triggered
+    case toolOutputTripwireTriggered(
+        guardrailName: String,
+        toolName: String,
+        message: String?,
+        outputInfo: SendableValue?
+    )
+
+    /// Guardrail execution failed
+    case executionFailed(guardrailName: String, underlyingError: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .inputTripwireTriggered(let name, let message, _):
+            return "Input guardrail '\(name)' tripwire triggered: \(message ?? "No message")"
+        case .outputTripwireTriggered(let name, let agentName, let message, _):
+            return "Output guardrail '\(name)' tripwire triggered for agent '\(agentName)': \(message ?? "No message")"
+        case .toolInputTripwireTriggered(let name, let toolName, let message, _):
+            return "Tool input guardrail '\(name)' tripwire triggered for tool '\(toolName)': \(message ?? "No message")"
+        case .toolOutputTripwireTriggered(let name, let toolName, let message, _):
+            return "Tool output guardrail '\(name)' tripwire triggered for tool '\(toolName)': \(message ?? "No message")"
+        case .executionFailed(let name, let error):
+            return "Guardrail '\(name)' execution failed: \(error)"
+        }
+    }
+}
+```
+
+#### File 6: `Sources/SwiftAgents/Guardrails/GuardrailRunner.swift`
+
+```swift
+import Foundation
+
+/// Executes guardrails and handles tripwire logic
+public actor GuardrailRunner {
+
+    /// Run input guardrails
+    /// - Parameters:
+    ///   - guardrails: Array of input guardrails to run
+    ///   - input: The user input
+    ///   - agent: The agent processing the input
+    ///   - context: The execution context
+    /// - Throws: GuardrailError.inputTripwireTriggered if any tripwire is triggered
+    public func runInputGuardrails(
+        _ guardrails: [any InputGuardrail],
+        input: String,
+        agent: any Agent,
+        context: AgentContext
+    ) async throws -> [InputGuardrailResult] {
+        var results: [InputGuardrailResult] = []
+
+        // Separate parallel and sequential guardrails
+        let parallelGuardrails = guardrails.filter { $0.runInParallel }
+        let sequentialGuardrails = guardrails.filter { !$0.runInParallel }
+
+        // Run sequential guardrails first (before agent starts)
+        for guardrail in sequentialGuardrails {
+            let result = try await runSingleInputGuardrail(
+                guardrail,
+                input: input,
+                agent: agent,
+                context: context
+            )
+            results.append(result)
+
+            if result.result.tripwireTriggered {
+                throw GuardrailError.inputTripwireTriggered(
+                    guardrailName: guardrail.name,
+                    message: result.result.message,
+                    outputInfo: result.result.outputInfo
+                )
+            }
+        }
+
+        // Run parallel guardrails concurrently
+        if !parallelGuardrails.isEmpty {
+            try await withThrowingTaskGroup(of: InputGuardrailResult.self) { group in
+                for guardrail in parallelGuardrails {
+                    group.addTask {
+                        try await self.runSingleInputGuardrail(
+                            guardrail,
+                            input: input,
+                            agent: agent,
+                            context: context
+                        )
+                    }
+                }
+
+                for try await result in group {
+                    results.append(result)
+                    if result.result.tripwireTriggered {
+                        throw GuardrailError.inputTripwireTriggered(
+                            guardrailName: result.guardrailName,
+                            message: result.result.message,
+                            outputInfo: result.result.outputInfo
+                        )
+                    }
+                }
+            }
+        }
+
+        return results
+    }
+
+    /// Run output guardrails
+    public func runOutputGuardrails(
+        _ guardrails: [any OutputGuardrail],
+        output: AgentResult,
+        agent: any Agent,
+        context: AgentContext
+    ) async throws -> [OutputGuardrailResult] {
+        var results: [OutputGuardrailResult] = []
+
+        for guardrail in guardrails {
+            let guardrailResult = try await guardrail.validate(output, agent: agent, context: context)
+            let result = OutputGuardrailResult(
+                guardrailName: guardrail.name,
+                agentName: agent.configuration.name ?? "Unknown",
+                result: guardrailResult
+            )
+            results.append(result)
+
+            if guardrailResult.tripwireTriggered {
+                throw GuardrailError.outputTripwireTriggered(
+                    guardrailName: guardrail.name,
+                    agentName: agent.configuration.name ?? "Unknown",
+                    message: guardrailResult.message,
+                    outputInfo: guardrailResult.outputInfo
+                )
+            }
+        }
+
+        return results
+    }
+
+    /// Run tool input guardrails
+    public func runToolInputGuardrails(
+        _ guardrails: [any ToolInputGuardrail],
+        data: ToolGuardrailData
+    ) async throws -> [ToolGuardrailResult] {
+        var results: [ToolGuardrailResult] = []
+
+        for guardrail in guardrails {
+            let guardrailResult = try await guardrail.validate(data)
+            let result = ToolGuardrailResult(
+                guardrailName: guardrail.name,
+                toolName: data.toolName,
+                result: guardrailResult
+            )
+            results.append(result)
+
+            if guardrailResult.tripwireTriggered {
+                throw GuardrailError.toolInputTripwireTriggered(
+                    guardrailName: guardrail.name,
+                    toolName: data.toolName,
+                    message: guardrailResult.message,
+                    outputInfo: guardrailResult.outputInfo
+                )
+            }
+        }
+
+        return results
+    }
+
+    /// Run tool output guardrails
+    public func runToolOutputGuardrails(
+        _ guardrails: [any ToolOutputGuardrail],
+        data: ToolOutputGuardrailData
+    ) async throws -> [ToolGuardrailResult] {
+        var results: [ToolGuardrailResult] = []
+
+        for guardrail in guardrails {
+            let guardrailResult = try await guardrail.validate(data)
+            let result = ToolGuardrailResult(
+                guardrailName: guardrail.name,
+                toolName: data.toolName,
+                result: guardrailResult
+            )
+            results.append(result)
+
+            if guardrailResult.tripwireTriggered {
+                throw GuardrailError.toolOutputTripwireTriggered(
+                    guardrailName: guardrail.name,
+                    toolName: data.toolName,
+                    message: guardrailResult.message,
+                    outputInfo: guardrailResult.outputInfo
+                )
+            }
+        }
+
+        return results
+    }
+
+    // MARK: - Private Helpers
+
+    private func runSingleInputGuardrail(
+        _ guardrail: any InputGuardrail,
+        input: String,
+        agent: any Agent,
+        context: AgentContext
+    ) async throws -> InputGuardrailResult {
+        let result = try await guardrail.validate(input, agent: agent, context: context)
+        return InputGuardrailResult(
+            guardrailName: guardrail.name,
+            result: result
+        )
+    }
+}
+
+// MARK: - Result Types
+
+public struct InputGuardrailResult: Sendable {
+    public let guardrailName: String
+    public let result: GuardrailResult
+}
+
+public struct OutputGuardrailResult: Sendable {
+    public let guardrailName: String
+    public let agentName: String
+    public let result: GuardrailResult
+}
+
+public struct ToolGuardrailResult: Sendable {
+    public let guardrailName: String
+    public let toolName: String
+    public let result: GuardrailResult
+}
+```
+
+#### Integration: Update `Agent` Protocol
+
+In `Sources/SwiftAgents/Core/Agent.swift`, add:
+
+```swift
+public protocol Agent: Sendable {
+    // ... existing properties ...
+
+    /// Input guardrails to validate input before execution
+    nonisolated var inputGuardrails: [any InputGuardrail] { get }
+
+    /// Output guardrails to validate output after execution
+    nonisolated var outputGuardrails: [any OutputGuardrail] { get }
+}
+
+// Default implementations
+public extension Agent {
+    nonisolated var inputGuardrails: [any InputGuardrail] { [] }
+    nonisolated var outputGuardrails: [any OutputGuardrail] { [] }
+}
+```
+
+#### Integration: Update `Tool` Protocol
+
+In `Sources/SwiftAgents/Tools/Tool.swift`, add:
+
+```swift
+public protocol Tool: Sendable {
+    // ... existing properties ...
+
+    /// Input guardrails to validate arguments before execution
+    var inputGuardrails: [any ToolInputGuardrail] { get }
+
+    /// Output guardrails to validate result after execution
+    var outputGuardrails: [any ToolOutputGuardrail] { get }
+}
+
+// Default implementations
+public extension Tool {
+    var inputGuardrails: [any ToolInputGuardrail] { [] }
+    var outputGuardrails: [any ToolOutputGuardrail] { [] }
+}
+```
+
+#### Integration: Update `ToolRegistry`
+
+In `Sources/SwiftAgents/Tools/Tool.swift`, update `ToolRegistry.execute()`:
+
+```swift
+public func execute(
+    toolNamed name: String,
+    arguments: [String: SendableValue],
+    agent: any Agent,
+    context: AgentContext
+) async throws -> SendableValue {
+    guard let tool = tools[name] else {
+        throw AgentError.toolNotFound(name: name)
+    }
+
+    let guardrailRunner = GuardrailRunner()
+
+    // Run input guardrails
+    if !tool.inputGuardrails.isEmpty {
+        let data = ToolGuardrailData(
+            toolName: name,
+            arguments: arguments,
+            agent: agent,
+            context: context
+        )
+        _ = try await guardrailRunner.runToolInputGuardrails(tool.inputGuardrails, data: data)
+    }
+
+    // Execute tool
+    let result = try await tool.execute(arguments: arguments)
+
+    // Run output guardrails
+    if !tool.outputGuardrails.isEmpty {
+        let data = ToolOutputGuardrailData(
+            toolName: name,
+            arguments: arguments,
+            output: result,
+            agent: agent,
+            context: context
+        )
+        _ = try await guardrailRunner.runToolOutputGuardrails(tool.outputGuardrails, data: data)
+    }
+
+    return result
+}
+```
 
 ---
 
-## Feature 4: Typed Pipeline Operators
+## Phase 2: Streaming Events & RunHooks
 
-**Priority:** Medium
-**Tests:** `TypedPipelineTests.swift`
-**Location:** `Sources/SwiftAgents/Orchestration/Pipeline.swift`
+### Overview
+Implement rich streaming events during execution and lifecycle hooks for custom integrations.
 
-### Implementation Steps
+### OpenAI Reference Implementation
 
-1. **Define generic Pipeline struct**
-   ```swift
-   public struct Pipeline<Input: Sendable, Output: Sendable>: Sendable {
-       public let execute: @Sendable (Input) async throws -> Output
-   }
-   ```
+```python
+# OpenAI's RunItemStreamEvent
+@dataclass
+class RunItemStreamEvent:
+    name: Literal[
+        "message_output_created",
+        "handoff_requested",
+        "handoff_occured",
+        "tool_called",
+        "tool_output",
+        "reasoning_item_created",
+    ]
+    item: RunItem
+    type: Literal["run_item_stream_event"] = "run_item_stream_event"
 
-2. **Implement map and flatMap methods**
-   ```swift
-   extension Pipeline {
-       func map<NewOutput>(_ transform: @escaping (Output) -> NewOutput) -> Pipeline<Input, NewOutput>
-       func flatMap<NewOutput>(_ transform: @escaping (Output) -> Pipeline<Output, NewOutput>) -> Pipeline<Input, NewOutput>
-   }
-   ```
+# OpenAI's RunHooksBase
+class RunHooksBase[TContext, TAgent]:
+    async def on_agent_start(self, context, agent) -> None
+    async def on_agent_end(self, context, agent, output) -> None
+    async def on_handoff(self, context, from_agent, to_agent) -> None
+    async def on_tool_start(self, context, agent, tool) -> None
+    async def on_tool_end(self, context, agent, tool, result) -> None
+    async def on_llm_start(self, context, agent, system_prompt, input_items) -> None
+    async def on_llm_end(self, context, agent, response) -> None
+```
 
-3. **Create >>> operator for pipeline chaining**
-   ```swift
-   public func >>> <A, B, C>(lhs: Pipeline<A, B>, rhs: Pipeline<B, C>) -> Pipeline<A, C>
-   ```
+### SwiftAgents Implementation
 
-4. **Add Agent.asPipeline() extension**
-   ```swift
-   extension Agent {
-       func asPipeline() -> Pipeline<String, AgentResult>
-   }
-   ```
+#### File 1: Update `Sources/SwiftAgents/Core/AgentEvent.swift`
 
-### Files to Create/Modify
-- `Sources/SwiftAgents/Orchestration/Pipeline.swift` (new)
+```swift
+import Foundation
+
+/// Events emitted during agent execution
+public enum AgentEvent: Sendable {
+    // MARK: - Lifecycle Events
+
+    /// Agent execution started
+    case started(input: String, agentName: String)
+
+    /// Agent execution completed successfully
+    case completed(result: AgentResult)
+
+    /// Agent execution failed with error
+    case failed(error: Error)
+
+    /// Agent execution was cancelled
+    case cancelled
+
+    // MARK: - Reasoning Events (NEW)
+
+    /// Agent is thinking/reasoning
+    case thinking(thought: String, iteration: Int)
+
+    /// Agent made a decision
+    case decision(decision: String, options: [String]?)
+
+    /// Agent created or updated a plan
+    case planUpdated(plan: String, stepCount: Int)
+
+    // MARK: - Tool Events (NEW)
+
+    /// Tool execution started
+    case toolCallStarted(
+        toolName: String,
+        arguments: [String: SendableValue],
+        spanId: UUID
+    )
+
+    /// Tool execution completed
+    case toolCallCompleted(
+        toolName: String,
+        result: SendableValue,
+        duration: TimeInterval,
+        spanId: UUID
+    )
+
+    /// Tool execution failed
+    case toolCallFailed(
+        toolName: String,
+        error: Error,
+        spanId: UUID
+    )
+
+    // MARK: - Iteration Events (NEW)
+
+    /// Iteration started
+    case iterationStarted(iteration: Int, maxIterations: Int)
+
+    /// Iteration completed
+    case iterationCompleted(iteration: Int, hasMoreWork: Bool)
+
+    // MARK: - Output Events (NEW)
+
+    /// Streaming output token (for real-time display)
+    case outputToken(token: String)
+
+    /// Streaming output chunk (larger piece)
+    case outputChunk(chunk: String)
+
+    // MARK: - Handoff Events (NEW)
+
+    /// Agent handoff initiated
+    case handoffRequested(
+        fromAgent: String,
+        toAgent: String,
+        reason: String?
+    )
+
+    /// Agent handoff completed
+    case handoffCompleted(
+        fromAgent: String,
+        toAgent: String
+    )
+
+    // MARK: - Guardrail Events (NEW)
+
+    /// Guardrail check started
+    case guardrailStarted(name: String, type: GuardrailType)
+
+    /// Guardrail check passed
+    case guardrailPassed(name: String, type: GuardrailType)
+
+    /// Guardrail tripwire triggered
+    case guardrailTriggered(
+        name: String,
+        type: GuardrailType,
+        message: String?
+    )
+
+    // MARK: - Memory Events (NEW)
+
+    /// Memory was accessed
+    case memoryAccessed(operation: MemoryOperation, count: Int)
+
+    // MARK: - LLM Events (NEW)
+
+    /// LLM call started
+    case llmStarted(model: String?, promptTokens: Int?)
+
+    /// LLM call completed
+    case llmCompleted(
+        model: String?,
+        promptTokens: Int?,
+        completionTokens: Int?,
+        duration: TimeInterval
+    )
+}
+
+// MARK: - Supporting Types
+
+public enum GuardrailType: String, Sendable {
+    case input
+    case output
+    case toolInput
+    case toolOutput
+}
+
+public enum MemoryOperation: String, Sendable {
+    case read
+    case write
+    case search
+    case clear
+}
+```
+
+#### File 2: `Sources/SwiftAgents/Core/RunHooks.swift`
+
+```swift
+import Foundation
+
+/// Protocol for receiving callbacks during agent run lifecycle
+public protocol RunHooks: Sendable {
+    /// Called when an agent starts execution
+    func onAgentStart(
+        context: AgentContext,
+        agent: any Agent,
+        input: String
+    ) async
+
+    /// Called when an agent completes execution
+    func onAgentEnd(
+        context: AgentContext,
+        agent: any Agent,
+        result: AgentResult
+    ) async
+
+    /// Called when an error occurs
+    func onError(
+        context: AgentContext,
+        agent: any Agent,
+        error: Error
+    ) async
+
+    /// Called when a handoff occurs between agents
+    func onHandoff(
+        context: AgentContext,
+        fromAgent: any Agent,
+        toAgent: any Agent
+    ) async
+
+    /// Called when a tool starts execution
+    func onToolStart(
+        context: AgentContext,
+        agent: any Agent,
+        tool: any Tool,
+        arguments: [String: SendableValue]
+    ) async
+
+    /// Called when a tool completes execution
+    func onToolEnd(
+        context: AgentContext,
+        agent: any Agent,
+        tool: any Tool,
+        result: SendableValue
+    ) async
+
+    /// Called when LLM inference starts
+    func onLLMStart(
+        context: AgentContext,
+        agent: any Agent,
+        systemPrompt: String?,
+        inputMessages: [MemoryMessage]
+    ) async
+
+    /// Called when LLM inference completes
+    func onLLMEnd(
+        context: AgentContext,
+        agent: any Agent,
+        response: String,
+        usage: TokenUsage?
+    ) async
+
+    /// Called when a guardrail is triggered
+    func onGuardrailTriggered(
+        context: AgentContext,
+        guardrailName: String,
+        guardrailType: GuardrailType,
+        result: GuardrailResult
+    ) async
+}
+
+// MARK: - Default Implementations
+
+public extension RunHooks {
+    func onAgentStart(context: AgentContext, agent: any Agent, input: String) async {}
+    func onAgentEnd(context: AgentContext, agent: any Agent, result: AgentResult) async {}
+    func onError(context: AgentContext, agent: any Agent, error: Error) async {}
+    func onHandoff(context: AgentContext, fromAgent: any Agent, toAgent: any Agent) async {}
+    func onToolStart(context: AgentContext, agent: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {}
+    func onToolEnd(context: AgentContext, agent: any Agent, tool: any Tool, result: SendableValue) async {}
+    func onLLMStart(context: AgentContext, agent: any Agent, systemPrompt: String?, inputMessages: [MemoryMessage]) async {}
+    func onLLMEnd(context: AgentContext, agent: any Agent, response: String, usage: TokenUsage?) async {}
+    func onGuardrailTriggered(context: AgentContext, guardrailName: String, guardrailType: GuardrailType, result: GuardrailResult) async {}
+}
+
+// MARK: - Token Usage
+
+public struct TokenUsage: Sendable {
+    public let promptTokens: Int
+    public let completionTokens: Int
+    public let totalTokens: Int
+
+    public init(promptTokens: Int, completionTokens: Int) {
+        self.promptTokens = promptTokens
+        self.completionTokens = completionTokens
+        self.totalTokens = promptTokens + completionTokens
+    }
+}
+
+// MARK: - Composite Hooks
+
+/// Runs multiple hooks in sequence
+public struct CompositeRunHooks: RunHooks {
+    private let hooks: [any RunHooks]
+
+    public init(_ hooks: [any RunHooks]) {
+        self.hooks = hooks
+    }
+
+    public func onAgentStart(context: AgentContext, agent: any Agent, input: String) async {
+        for hook in hooks {
+            await hook.onAgentStart(context: context, agent: agent, input: input)
+        }
+    }
+
+    public func onAgentEnd(context: AgentContext, agent: any Agent, result: AgentResult) async {
+        for hook in hooks {
+            await hook.onAgentEnd(context: context, agent: agent, result: result)
+        }
+    }
+
+    public func onError(context: AgentContext, agent: any Agent, error: Error) async {
+        for hook in hooks {
+            await hook.onError(context: context, agent: agent, error: error)
+        }
+    }
+
+    public func onHandoff(context: AgentContext, fromAgent: any Agent, toAgent: any Agent) async {
+        for hook in hooks {
+            await hook.onHandoff(context: context, fromAgent: fromAgent, toAgent: toAgent)
+        }
+    }
+
+    public func onToolStart(context: AgentContext, agent: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {
+        for hook in hooks {
+            await hook.onToolStart(context: context, agent: agent, tool: tool, arguments: arguments)
+        }
+    }
+
+    public func onToolEnd(context: AgentContext, agent: any Agent, tool: any Tool, result: SendableValue) async {
+        for hook in hooks {
+            await hook.onToolEnd(context: context, agent: agent, tool: tool, result: result)
+        }
+    }
+
+    public func onLLMStart(context: AgentContext, agent: any Agent, systemPrompt: String?, inputMessages: [MemoryMessage]) async {
+        for hook in hooks {
+            await hook.onLLMStart(context: context, agent: agent, systemPrompt: systemPrompt, inputMessages: inputMessages)
+        }
+    }
+
+    public func onLLMEnd(context: AgentContext, agent: any Agent, response: String, usage: TokenUsage?) async {
+        for hook in hooks {
+            await hook.onLLMEnd(context: context, agent: agent, response: response, usage: usage)
+        }
+    }
+
+    public func onGuardrailTriggered(context: AgentContext, guardrailName: String, guardrailType: GuardrailType, result: GuardrailResult) async {
+        for hook in hooks {
+            await hook.onGuardrailTriggered(context: context, guardrailName: guardrailName, guardrailType: guardrailType, result: result)
+        }
+    }
+}
+
+// MARK: - Logging Hooks
+
+/// Hook that logs all events
+public struct LoggingRunHooks: RunHooks {
+    private let logger: Logger
+
+    public init(logger: Logger = Log.agents) {
+        self.logger = logger
+    }
+
+    public func onAgentStart(context: AgentContext, agent: any Agent, input: String) async {
+        logger.info("Agent '\(agent.configuration.name ?? "Unknown")' started with input: \(input.prefix(100))...")
+    }
+
+    public func onAgentEnd(context: AgentContext, agent: any Agent, result: AgentResult) async {
+        logger.info("Agent '\(agent.configuration.name ?? "Unknown")' completed with output: \(result.output.prefix(100))...")
+    }
+
+    public func onError(context: AgentContext, agent: any Agent, error: Error) async {
+        logger.error("Agent '\(agent.configuration.name ?? "Unknown")' error: \(error.localizedDescription)")
+    }
+
+    public func onHandoff(context: AgentContext, fromAgent: any Agent, toAgent: any Agent) async {
+        logger.info("Handoff from '\(fromAgent.configuration.name ?? "Unknown")' to '\(toAgent.configuration.name ?? "Unknown")'")
+    }
+
+    public func onToolStart(context: AgentContext, agent: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {
+        logger.debug("Tool '\(tool.name)' started with \(arguments.count) arguments")
+    }
+
+    public func onToolEnd(context: AgentContext, agent: any Agent, tool: any Tool, result: SendableValue) async {
+        logger.debug("Tool '\(tool.name)' completed")
+    }
+
+    public func onGuardrailTriggered(context: AgentContext, guardrailName: String, guardrailType: GuardrailType, result: GuardrailResult) async {
+        logger.warning("Guardrail '\(guardrailName)' (\(guardrailType.rawValue)) triggered: \(result.message ?? "No message")")
+    }
+}
+```
+
+#### Integration: Update Agent `run()` Methods
+
+In agent implementations (e.g., `ReActAgent.swift`), add hooks parameter and emit events:
+
+```swift
+public func run(
+    _ input: String,
+    context: AgentContext? = nil,
+    hooks: (any RunHooks)? = nil
+) async throws -> AgentResult {
+    let ctx = context ?? AgentContext()
+
+    // Emit start event
+    await emitEvent(.started(input: input, agentName: configuration.name ?? "Unknown"))
+    await hooks?.onAgentStart(context: ctx, agent: self, input: input)
+
+    do {
+        // Run input guardrails
+        if !inputGuardrails.isEmpty {
+            for guardrail in inputGuardrails {
+                await emitEvent(.guardrailStarted(name: guardrail.name, type: .input))
+            }
+            let guardrailRunner = GuardrailRunner()
+            _ = try await guardrailRunner.runInputGuardrails(
+                inputGuardrails,
+                input: input,
+                agent: self,
+                context: ctx
+            )
+            for guardrail in inputGuardrails {
+                await emitEvent(.guardrailPassed(name: guardrail.name, type: .input))
+            }
+        }
+
+        // ... existing execution logic ...
+        // Add event emissions at appropriate points
+
+        let result = try await executeLoop(input: input, context: ctx, hooks: hooks)
+
+        // Run output guardrails
+        if !outputGuardrails.isEmpty {
+            let guardrailRunner = GuardrailRunner()
+            _ = try await guardrailRunner.runOutputGuardrails(
+                outputGuardrails,
+                output: result,
+                agent: self,
+                context: ctx
+            )
+        }
+
+        await emitEvent(.completed(result: result))
+        await hooks?.onAgentEnd(context: ctx, agent: self, result: result)
+
+        return result
+
+    } catch let error as GuardrailError {
+        await hooks?.onError(context: ctx, agent: self, error: error)
+        await emitEvent(.failed(error: error))
+        throw error
+    } catch {
+        await hooks?.onError(context: ctx, agent: self, error: error)
+        await emitEvent(.failed(error: error))
+        throw error
+    }
+}
+```
 
 ---
 
-## Feature 5: Typed ContextKey
+## Phase 3: Session & TraceContext
 
-**Priority:** Medium
-**Tests:** `TypedContextKeyTests.swift`
-**Location:** `Sources/SwiftAgents/Orchestration/ContextKey.swift`
+### Overview
+Implement Session protocol for automatic conversation history management and TraceContext for grouping related traces.
 
-### Implementation Steps
+### OpenAI Reference Implementation
 
-1. **Define generic ContextKey struct**
-   ```swift
-   public struct ContextKey<Value: Sendable>: Hashable, Sendable {
-       public let name: String
-   }
-   ```
+```python
+# OpenAI's Session Protocol
+class Session(Protocol):
+    session_id: str
 
-2. **Add typed accessors to AgentContext**
-   ```swift
-   extension AgentContext {
-       func setTyped<T: Sendable & Codable>(_ key: ContextKey<T>, value: T) async
-       func getTyped<T: Sendable & Codable>(_ key: ContextKey<T>) async -> T?
-       func getTyped<T: Sendable & Codable>(_ key: ContextKey<T>, default: T) async -> T
-   }
-   ```
+    async def get_items(self, limit: int | None = None) -> list[TResponseInputItem]:
+        """Retrieve conversation history."""
+        ...
 
-3. **Define standard context keys**
-   ```swift
-   extension ContextKey where Value == String {
-       static let userID = ContextKey("user_id")
-       static let sessionID = ContextKey("session_id")
-   }
-   ```
+    async def add_items(self, items: list[TResponseInputItem]) -> None:
+        """Add items to history."""
+        ...
 
-4. **Add typed route condition**
-   ```swift
-   extension RouteCondition {
-       static func contextHasTyped<T: Equatable>(_ key: ContextKey<T>, equalTo: T) -> RouteCondition
-   }
-   ```
+    async def pop_item(self) -> TResponseInputItem | None:
+        """Remove and return most recent item."""
+        ...
 
-### Files to Create/Modify
-- `Sources/SwiftAgents/Orchestration/ContextKey.swift` (new)
-- `Sources/SwiftAgents/Orchestration/AgentContext.swift` (modify)
-- `Sources/SwiftAgents/Orchestration/AgentRouter.swift` (modify)
+    async def clear_session(self) -> None:
+        """Clear all items."""
+        ...
+
+# OpenAI's trace context manager
+with trace("Customer Service", group_id="chat_123", metadata={"customer": "user_456"}):
+    result1 = await Runner.run(agent, query1)
+    result2 = await Runner.run(agent, query2)
+```
+
+### SwiftAgents Implementation
+
+#### File 1: `Sources/SwiftAgents/Memory/Session.swift`
+
+```swift
+import Foundation
+
+/// Protocol for managing conversation session history
+/// Provides automatic conversation history management for agents
+public protocol Session: Actor, Sendable {
+    /// Unique identifier for this session
+    var sessionId: String { get }
+
+    /// Retrieve conversation history
+    /// - Parameter limit: Maximum items to retrieve (nil = all)
+    /// - Returns: Array of messages in chronological order
+    func getItems(limit: Int?) async throws -> [MemoryMessage]
+
+    /// Add items to conversation history
+    func addItems(_ items: [MemoryMessage]) async throws
+
+    /// Remove and return the most recent item
+    func popItem() async throws -> MemoryMessage?
+
+    /// Clear all items in this session
+    func clearSession() async throws
+
+    /// Get the total count of items
+    var itemCount: Int { get async }
+}
+
+// MARK: - Default Implementations
+
+public extension Session {
+    /// Add a single item
+    func addItem(_ item: MemoryMessage) async throws {
+        try await addItems([item])
+    }
+
+    /// Get all items (no limit)
+    func getAllItems() async throws -> [MemoryMessage] {
+        try await getItems(limit: nil)
+    }
+}
+```
+
+#### File 2: `Sources/SwiftAgents/Memory/InMemorySession.swift`
+
+```swift
+import Foundation
+
+/// In-memory session implementation for testing and simple use cases
+public actor InMemorySession: Session {
+    public let sessionId: String
+    private var items: [MemoryMessage] = []
+
+    public init(sessionId: String = UUID().uuidString) {
+        self.sessionId = sessionId
+    }
+
+    public var itemCount: Int {
+        items.count
+    }
+
+    public func getItems(limit: Int?) async throws -> [MemoryMessage] {
+        if let limit = limit {
+            let startIndex = max(0, items.count - limit)
+            return Array(items[startIndex...])
+        }
+        return items
+    }
+
+    public func addItems(_ newItems: [MemoryMessage]) async throws {
+        items.append(contentsOf: newItems)
+    }
+
+    public func popItem() async throws -> MemoryMessage? {
+        guard !items.isEmpty else { return nil }
+        return items.removeLast()
+    }
+
+    public func clearSession() async throws {
+        items.removeAll()
+    }
+}
+```
+
+#### File 3: `Sources/SwiftAgents/Memory/PersistentSession.swift`
+
+```swift
+import Foundation
+import SwiftData
+
+/// SwiftData-backed persistent session
+@available(iOS 17.0, macOS 14.0, *)
+public actor PersistentSession: Session {
+    public let sessionId: String
+    private let backend: SwiftDataBackend
+
+    public init(sessionId: String, backend: SwiftDataBackend) {
+        self.sessionId = sessionId
+        self.backend = backend
+    }
+
+    /// Create with default persistent storage
+    public static func persistent(sessionId: String) throws -> PersistentSession {
+        let backend = try SwiftDataBackend.persistent()
+        return PersistentSession(sessionId: sessionId, backend: backend)
+    }
+
+    /// Create with in-memory storage (for testing)
+    public static func inMemory(sessionId: String) throws -> PersistentSession {
+        let backend = try SwiftDataBackend.inMemory()
+        return PersistentSession(sessionId: sessionId, backend: backend)
+    }
+
+    public var itemCount: Int {
+        get async {
+            (try? await backend.messageCount(conversationId: sessionId)) ?? 0
+        }
+    }
+
+    public func getItems(limit: Int?) async throws -> [MemoryMessage] {
+        if let limit = limit {
+            return try await backend.fetchRecentMessages(conversationId: sessionId, limit: limit)
+        }
+        return try await backend.fetchMessages(conversationId: sessionId)
+    }
+
+    public func addItems(_ items: [MemoryMessage]) async throws {
+        try await backend.storeAll(items, conversationId: sessionId)
+    }
+
+    public func popItem() async throws -> MemoryMessage? {
+        let items = try await backend.fetchRecentMessages(conversationId: sessionId, limit: 1)
+        if let last = items.last {
+            try await backend.deleteOldestMessages(conversationId: sessionId, keepRecent: await itemCount - 1)
+            return last
+        }
+        return nil
+    }
+
+    public func clearSession() async throws {
+        try await backend.deleteMessages(conversationId: sessionId)
+    }
+}
+```
+
+#### File 4: `Sources/SwiftAgents/Observability/TraceContext.swift`
+
+```swift
+import Foundation
+
+/// Context for grouping related traces together
+public actor TraceContext {
+    /// Name of this trace workflow
+    public let name: String
+
+    /// Unique trace identifier
+    public let traceId: UUID
+
+    /// Group identifier for linking related traces
+    public let groupId: String?
+
+    /// Additional metadata
+    public let metadata: [String: SendableValue]
+
+    /// Start time of the trace
+    public let startTime: Date
+
+    /// Child spans in this trace
+    private var spans: [TraceSpan] = []
+
+    private init(
+        name: String,
+        traceId: UUID = UUID(),
+        groupId: String? = nil,
+        metadata: [String: SendableValue] = [:]
+    ) {
+        self.name = name
+        self.traceId = traceId
+        self.groupId = groupId
+        self.metadata = metadata
+        self.startTime = Date()
+    }
+
+    /// Execute an operation within a trace context
+    /// - Parameters:
+    ///   - name: Name of the workflow/trace
+    ///   - groupId: Optional group ID to link related traces
+    ///   - metadata: Additional metadata to attach
+    ///   - operation: The async operation to execute
+    /// - Returns: The result of the operation
+    public static func withTrace<T: Sendable>(
+        _ name: String,
+        groupId: String? = nil,
+        metadata: [String: SendableValue] = [:],
+        operation: @Sendable () async throws -> T
+    ) async rethrows -> T {
+        let context = TraceContext(name: name, groupId: groupId, metadata: metadata)
+
+        // Store in task-local storage
+        return try await TraceContextStorage.$current.withValue(context) {
+            try await operation()
+        }
+    }
+
+    /// Get the current trace context (if any)
+    public static var current: TraceContext? {
+        TraceContextStorage.current
+    }
+
+    /// Add a span to this trace
+    public func addSpan(_ span: TraceSpan) {
+        spans.append(span)
+    }
+
+    /// Get all spans in this trace
+    public func getSpans() -> [TraceSpan] {
+        spans
+    }
+
+    /// Calculate total duration
+    public var duration: TimeInterval {
+        Date().timeIntervalSince(startTime)
+    }
+}
+
+// MARK: - Task-Local Storage
+
+private enum TraceContextStorage {
+    @TaskLocal
+    static var current: TraceContext?
+}
+
+// MARK: - Trace Span
+
+public struct TraceSpan: Sendable {
+    public let spanId: UUID
+    public let parentSpanId: UUID?
+    public let name: String
+    public let startTime: Date
+    public let endTime: Date?
+    public let status: SpanStatus
+    public let metadata: [String: SendableValue]
+
+    public init(
+        spanId: UUID = UUID(),
+        parentSpanId: UUID? = nil,
+        name: String,
+        startTime: Date = Date(),
+        endTime: Date? = nil,
+        status: SpanStatus = .ok,
+        metadata: [String: SendableValue] = [:]
+    ) {
+        self.spanId = spanId
+        self.parentSpanId = parentSpanId
+        self.name = name
+        self.startTime = startTime
+        self.endTime = endTime
+        self.status = status
+        self.metadata = metadata
+    }
+
+    public var duration: TimeInterval? {
+        guard let end = endTime else { return nil }
+        return end.timeIntervalSince(startTime)
+    }
+}
+
+public enum SpanStatus: String, Sendable {
+    case ok
+    case error
+    case cancelled
+}
+
+// MARK: - Convenience Extensions
+
+public extension TraceContext {
+    /// Create a new span within this trace
+    func span(
+        _ name: String,
+        parentSpanId: UUID? = nil,
+        metadata: [String: SendableValue] = [:]
+    ) -> TraceSpan {
+        TraceSpan(
+            parentSpanId: parentSpanId,
+            name: name,
+            metadata: metadata
+        )
+    }
+}
+
+// MARK: - Integration with TracingHelper
+
+public extension TracingHelper {
+    /// Get the current trace context's traceId
+    var currentTraceId: UUID? {
+        TraceContext.current?.traceId
+    }
+
+    /// Get the current trace context's groupId
+    var currentGroupId: String? {
+        TraceContext.current?.groupId
+    }
+}
+```
 
 ---
 
-## Feature 6: Fluent Resilience Integration
+## Phase 4: Enhanced Handoffs & MultiProvider
 
-**Priority:** High
-**Tests:** `FluentResilienceTests.swift`
-**Location:** `Sources/SwiftAgents/Resilience/ResilientAgent.swift`
+### Overview
+Implement enhanced handoff callbacks and multi-provider model routing.
 
-### Implementation Steps
+### OpenAI Reference Implementation
 
-1. **Create ResilientAgent wrapper**
-   ```swift
-   public actor ResilientAgent: Agent {
-       private let base: any Agent
-       private let retry: RetryPolicy?
-       private let circuitBreaker: CircuitBreaker?
-       private let fallback: (any Agent)?
-       private let timeout: Duration?
-   }
-   ```
+```python
+# OpenAI's handoff function
+def handoff(
+    agent: Agent[TContext],
+    *,
+    on_handoff: OnHandoffWithInput[THandoffInput] | OnHandoffWithoutInput | None = None,
+    input_type: type[THandoffInput] | None = None,
+    tool_description_override: str | None = None,
+    tool_name_override: str | None = None,
+    input_filter: Callable[[HandoffInputData], HandoffInputData] | None = None,
+    nest_handoff_history: bool | None = None,
+    is_enabled: bool | Callable[[RunContextWrapper[Any], Agent[Any]], MaybeAwaitable[bool]] = True,
+) -> Handoff[TContext, Agent[TContext]]
 
-2. **Add fluent extension methods to Agent protocol**
-   ```swift
-   extension Agent {
-       func withRetry(_ policy: RetryPolicy) -> ResilientAgent
-       func withCircuitBreaker(threshold: Int, resetTimeout: Duration) -> ResilientAgent
-       func withFallback(_ fallback: any Agent) -> ResilientAgent
-       func withTimeout(_ timeout: Duration) -> ResilientAgent
-   }
-   ```
+# OpenAI's MultiProvider
+class MultiProvider(ModelProvider):
+    # "openai/" prefix or no prefix -> OpenAIProvider
+    # "litellm/" prefix -> LitellmProvider
+    def get_model(self, model_name: str | None) -> Model
+```
 
-3. **Extend RetryPolicy with factory methods**
-   ```swift
-   extension RetryPolicy {
-       static func fixed(maxAttempts: Int, delay: Duration) -> RetryPolicy
-       static func exponentialBackoff(maxAttempts: Int, ...) -> RetryPolicy
-   }
-   ```
+### SwiftAgents Implementation
 
-4. **Implement chaining support**
-   - ResilientAgent should return ResilientAgent from fluent methods
-   - Support arbitrary chaining order
+#### File 1: Update `Sources/SwiftAgents/Orchestration/Handoff.swift`
 
-### Files to Create/Modify
-- `Sources/SwiftAgents/Resilience/ResilientAgent.swift` (new)
-- `Sources/SwiftAgents/Resilience/RetryPolicy.swift` (modify)
-- `Sources/SwiftAgents/Core/Agent.swift` (modify)
+```swift
+import Foundation
+
+/// Configuration for agent handoffs
+public struct HandoffConfiguration: Sendable {
+    /// The target agent to hand off to
+    public let targetAgent: any Agent
+
+    /// Callback when handoff is invoked
+    public let onHandoff: (@Sendable (AgentContext, HandoffInputData) async throws -> Void)?
+
+    /// Filter/transform input data before handoff
+    public let inputFilter: (@Sendable (HandoffInputData) -> HandoffInputData)?
+
+    /// Override the tool name used for this handoff
+    public let toolNameOverride: String?
+
+    /// Override the tool description
+    public let toolDescriptionOverride: String?
+
+    /// Whether to nest the previous agent's history
+    public let nestHandoffHistory: Bool
+
+    /// Dynamic enablement check
+    public let isEnabled: (@Sendable (AgentContext, any Agent) async -> Bool)?
+
+    public init(
+        targetAgent: any Agent,
+        onHandoff: (@Sendable (AgentContext, HandoffInputData) async throws -> Void)? = nil,
+        inputFilter: (@Sendable (HandoffInputData) -> HandoffInputData)? = nil,
+        toolNameOverride: String? = nil,
+        toolDescriptionOverride: String? = nil,
+        nestHandoffHistory: Bool = false,
+        isEnabled: (@Sendable (AgentContext, any Agent) async -> Bool)? = nil
+    ) {
+        self.targetAgent = targetAgent
+        self.onHandoff = onHandoff
+        self.inputFilter = inputFilter
+        self.toolNameOverride = toolNameOverride
+        self.toolDescriptionOverride = toolDescriptionOverride
+        self.nestHandoffHistory = nestHandoffHistory
+        self.isEnabled = isEnabled
+    }
+
+    /// Resolved tool name
+    public var toolName: String {
+        toolNameOverride ?? "handoff_to_\(targetAgent.configuration.name ?? "agent")"
+    }
+
+    /// Resolved tool description
+    public var toolDescription: String {
+        toolDescriptionOverride ?? "Hand off to \(targetAgent.configuration.name ?? "another agent")"
+    }
+}
+
+/// Data passed during handoff
+public struct HandoffInputData: Sendable {
+    public var input: String
+    public var history: [MemoryMessage]
+    public var metadata: [String: SendableValue]
+    public var sourceAgentName: String
+
+    public init(
+        input: String,
+        history: [MemoryMessage] = [],
+        metadata: [String: SendableValue] = [:],
+        sourceAgentName: String
+    ) {
+        self.input = input
+        self.history = history
+        self.metadata = metadata
+        self.sourceAgentName = sourceAgentName
+    }
+}
+
+/// Event emitted when a handoff occurs
+public struct HandoffEvent: Sendable {
+    public let fromAgent: String
+    public let toAgent: String
+    public let input: String
+    public let timestamp: Date
+    public let metadata: [String: SendableValue]
+
+    public init(
+        fromAgent: String,
+        toAgent: String,
+        input: String,
+        timestamp: Date = Date(),
+        metadata: [String: SendableValue] = [:]
+    ) {
+        self.fromAgent = fromAgent
+        self.toAgent = toAgent
+        self.input = input
+        self.timestamp = timestamp
+        self.metadata = metadata
+    }
+}
+
+/// Builder for creating handoff configurations
+public struct HandoffBuilder {
+    private var targetAgent: (any Agent)?
+    private var onHandoff: (@Sendable (AgentContext, HandoffInputData) async throws -> Void)?
+    private var inputFilter: (@Sendable (HandoffInputData) -> HandoffInputData)?
+    private var toolNameOverride: String?
+    private var toolDescriptionOverride: String?
+    private var nestHandoffHistory: Bool = false
+    private var isEnabled: (@Sendable (AgentContext, any Agent) async -> Bool)?
+
+    public init() {}
+
+    public func target(_ agent: any Agent) -> HandoffBuilder {
+        var copy = self
+        copy.targetAgent = agent
+        return copy
+    }
+
+    public func onHandoff(
+        _ callback: @escaping @Sendable (AgentContext, HandoffInputData) async throws -> Void
+    ) -> HandoffBuilder {
+        var copy = self
+        copy.onHandoff = callback
+        return copy
+    }
+
+    public func inputFilter(
+        _ filter: @escaping @Sendable (HandoffInputData) -> HandoffInputData
+    ) -> HandoffBuilder {
+        var copy = self
+        copy.inputFilter = filter
+        return copy
+    }
+
+    public func toolName(_ name: String) -> HandoffBuilder {
+        var copy = self
+        copy.toolNameOverride = name
+        return copy
+    }
+
+    public func toolDescription(_ description: String) -> HandoffBuilder {
+        var copy = self
+        copy.toolDescriptionOverride = description
+        return copy
+    }
+
+    public func nestHistory(_ nest: Bool) -> HandoffBuilder {
+        var copy = self
+        copy.nestHandoffHistory = nest
+        return copy
+    }
+
+    public func isEnabled(
+        _ check: @escaping @Sendable (AgentContext, any Agent) async -> Bool
+    ) -> HandoffBuilder {
+        var copy = self
+        copy.isEnabled = check
+        return copy
+    }
+
+    public func build() -> HandoffConfiguration {
+        guard let target = targetAgent else {
+            fatalError("HandoffBuilder requires a target agent")
+        }
+        return HandoffConfiguration(
+            targetAgent: target,
+            onHandoff: onHandoff,
+            inputFilter: inputFilter,
+            toolNameOverride: toolNameOverride,
+            toolDescriptionOverride: toolDescriptionOverride,
+            nestHandoffHistory: nestHandoffHistory,
+            isEnabled: isEnabled
+        )
+    }
+}
+
+/// Convenience function for creating handoffs (matches OpenAI's API)
+public func handoff(
+    to agent: any Agent,
+    onHandoff: (@Sendable (AgentContext, HandoffInputData) async throws -> Void)? = nil,
+    inputFilter: (@Sendable (HandoffInputData) -> HandoffInputData)? = nil,
+    toolNameOverride: String? = nil,
+    toolDescriptionOverride: String? = nil,
+    nestHandoffHistory: Bool = false,
+    isEnabled: (@Sendable (AgentContext, any Agent) async -> Bool)? = nil
+) -> HandoffConfiguration {
+    HandoffConfiguration(
+        targetAgent: agent,
+        onHandoff: onHandoff,
+        inputFilter: inputFilter,
+        toolNameOverride: toolNameOverride,
+        toolDescriptionOverride: toolDescriptionOverride,
+        nestHandoffHistory: nestHandoffHistory,
+        isEnabled: isEnabled
+    )
+}
+```
+
+#### File 2: `Sources/SwiftAgents/Providers/MultiProvider.swift`
+
+```swift
+import Foundation
+
+/// Multi-provider that routes model names to appropriate providers based on prefix
+public actor MultiProvider: InferenceProvider {
+    /// Registered providers by prefix
+    private var providerMap: [String: any InferenceProvider] = [:]
+
+    /// Default provider when no prefix matches
+    private let defaultProvider: any InferenceProvider
+
+    /// Initialize with a default provider
+    public init(defaultProvider: any InferenceProvider) {
+        self.defaultProvider = defaultProvider
+    }
+
+    /// Register a provider for a prefix
+    /// - Parameters:
+    ///   - prefix: The prefix to match (e.g., "anthropic", "openai")
+    ///   - provider: The provider to use for this prefix
+    public func register(prefix: String, provider: any InferenceProvider) {
+        providerMap[prefix.lowercased()] = provider
+    }
+
+    /// Remove a registered provider
+    public func unregister(prefix: String) {
+        providerMap.removeValue(forKey: prefix.lowercased())
+    }
+
+    /// Get all registered prefixes
+    public var registeredPrefixes: [String] {
+        Array(providerMap.keys)
+    }
+
+    // MARK: - InferenceProvider Conformance
+
+    public func generate(
+        prompt: String,
+        systemPrompt: String?,
+        model: String?,
+        temperature: Double?,
+        maxTokens: Int?
+    ) async throws -> String {
+        let (provider, resolvedModel) = resolveProvider(for: model)
+        return try await provider.generate(
+            prompt: prompt,
+            systemPrompt: systemPrompt,
+            model: resolvedModel,
+            temperature: temperature,
+            maxTokens: maxTokens
+        )
+    }
+
+    public func generateWithToolCalls(
+        messages: [MemoryMessage],
+        tools: [ToolDefinition],
+        model: String?,
+        temperature: Double?,
+        maxTokens: Int?
+    ) async throws -> InferenceResponse {
+        let (provider, resolvedModel) = resolveProvider(for: model)
+        return try await provider.generateWithToolCalls(
+            messages: messages,
+            tools: tools,
+            model: resolvedModel,
+            temperature: temperature,
+            maxTokens: maxTokens
+        )
+    }
+
+    public func stream(
+        prompt: String,
+        systemPrompt: String?,
+        model: String?,
+        temperature: Double?,
+        maxTokens: Int?
+    ) -> AsyncThrowingStream<String, Error> {
+        // Note: This is synchronous resolution, stream is returned
+        let (provider, resolvedModel) = resolveProviderSync(for: model)
+        return provider.stream(
+            prompt: prompt,
+            systemPrompt: systemPrompt,
+            model: resolvedModel,
+            temperature: temperature,
+            maxTokens: maxTokens
+        )
+    }
+
+    // MARK: - Private Helpers
+
+    /// Parse model name into prefix and model
+    private func parseModelName(_ modelName: String?) -> (prefix: String?, model: String?) {
+        guard let modelName = modelName else {
+            return (nil, nil)
+        }
+
+        if modelName.contains("/") {
+            let parts = modelName.split(separator: "/", maxSplits: 1)
+            if parts.count == 2 {
+                return (String(parts[0]).lowercased(), String(parts[1]))
+            }
+        }
+
+        return (nil, modelName)
+    }
+
+    /// Resolve provider for a model name
+    private func resolveProvider(for model: String?) -> (any InferenceProvider, String?) {
+        let (prefix, resolvedModel) = parseModelName(model)
+
+        if let prefix = prefix, let provider = providerMap[prefix] {
+            return (provider, resolvedModel)
+        }
+
+        return (defaultProvider, resolvedModel ?? model)
+    }
+
+    /// Synchronous version for stream (providers are already registered)
+    private nonisolated func resolveProviderSync(for model: String?) -> (any InferenceProvider, String?) {
+        // For streaming, we need synchronous access
+        // This is a simplified version - in production, consider caching
+        let (prefix, resolvedModel) = parseModelNameSync(model)
+
+        // Return default for now - proper implementation would need actor isolation handling
+        return (defaultProvider, resolvedModel ?? model)
+    }
+
+    private nonisolated func parseModelNameSync(_ modelName: String?) -> (prefix: String?, model: String?) {
+        guard let modelName = modelName else {
+            return (nil, nil)
+        }
+
+        if modelName.contains("/") {
+            let parts = modelName.split(separator: "/", maxSplits: 1)
+            if parts.count == 2 {
+                return (String(parts[0]).lowercased(), String(parts[1]))
+            }
+        }
+
+        return (nil, modelName)
+    }
+}
+
+// MARK: - Convenience Initializers
+
+public extension MultiProvider {
+    /// Create with OpenRouter as default
+    static func withOpenRouter(apiKey: String) -> MultiProvider {
+        let openRouter = OpenRouterProvider(apiKey: apiKey)
+        return MultiProvider(defaultProvider: openRouter)
+    }
+}
+```
 
 ---
 
-## Feature 7: MemoryBuilder DSL
+## Phase 5: Polish Features
 
-**Priority:** Medium
-**Tests:** `MemoryBuilderTests.swift`
-**Location:** `Sources/SwiftAgents/Memory/MemoryBuilder.swift`
+### File 1: Add Parallel Tool Calls to `AgentConfiguration`
 
-### Implementation Steps
+```swift
+// In Sources/SwiftAgents/Core/AgentConfiguration.swift
 
-1. **Create MemoryBuilder result builder**
-   ```swift
-   @resultBuilder
-   public struct MemoryBuilder {
-       public static func buildBlock(_ components: any AgentMemory...) -> [any AgentMemory]
-   }
-   ```
+public struct AgentConfiguration: Sendable {
+    // ... existing properties ...
 
-2. **Create CompositeMemory actor**
-   ```swift
-   public actor CompositeMemory: AgentMemory {
-       private var components: [any AgentMemory]
+    /// Whether to execute multiple tool calls in parallel
+    public var parallelToolCalls: Bool = false
 
-       public init(@MemoryBuilder _ content: () -> [any AgentMemory])
-   }
-   ```
+    /// Previous response ID for conversation continuation
+    public var previousResponseId: String?
 
-3. **Add fluent configuration methods to memory types**
-   ```swift
-   extension ConversationMemory {
-       func withSummarization(after: Int) -> ConversationMemory
-       func withTokenLimit(_ limit: Int) -> ConversationMemory
-       func priority(_ priority: MemoryPriority) -> ConversationMemory
-   }
-   ```
+    /// Whether to auto-populate previous response ID
+    public var autoPreviousResponseId: Bool = false
+}
+```
 
-4. **Define retrieval and merge strategies**
-   ```swift
-   public enum RetrievalStrategy { case recency, relevance, hybrid }
-   public enum MergeStrategy { case concatenate, interleave, deduplicate }
-   ```
+### File 2: Update Tool Execution for Parallel Calls
 
-### Files to Create/Modify
-- `Sources/SwiftAgents/Memory/MemoryBuilder.swift` (new)
-- `Sources/SwiftAgents/Memory/CompositeMemory.swift` (new)
-- `Sources/SwiftAgents/Memory/ConversationMemory.swift` (modify)
-- `Sources/SwiftAgents/Memory/SlidingWindowMemory.swift` (modify)
+```swift
+// In ToolCallingAgent or ToolRegistry
 
----
+/// Execute multiple tools in parallel
+public func executeToolsInParallel(
+    calls: [(name: String, arguments: [String: SendableValue])],
+    agent: any Agent,
+    context: AgentContext
+) async throws -> [(name: String, result: SendableValue)] {
+    try await withThrowingTaskGroup(of: (String, SendableValue).self) { group in
+        for call in calls {
+            group.addTask {
+                let result = try await self.execute(
+                    toolNamed: call.name,
+                    arguments: call.arguments,
+                    agent: agent,
+                    context: context
+                )
+                return (call.name, result)
+            }
+        }
 
-## Feature 8: Agent Composition Operators
-
-**Priority:** Medium
-**Tests:** `AgentCompositionTests.swift`
-**Location:** `Sources/SwiftAgents/Orchestration/AgentOperators.swift`
-
-### Implementation Steps
-
-1. **Define + operator for parallel composition**
-   ```swift
-   public func + (lhs: any Agent, rhs: any Agent) -> ParallelComposition
-   ```
-
-2. **Define >>> operator for sequential composition**
-   ```swift
-   public func >>> (lhs: any Agent, rhs: any Agent) -> SequentialComposition
-   ```
-
-3. **Define | operator for conditional routing**
-   ```swift
-   public func | (lhs: any Agent, rhs: any Agent) -> ConditionalRouter
-   ```
-
-4. **Create composition types**
-   ```swift
-   public actor ParallelComposition: Agent { ... }
-   public actor SequentialComposition: Agent { ... }
-   public actor ConditionalRouter: Agent { ... }
-   ```
-
-5. **Add merge strategies and error handling**
-   ```swift
-   public enum ParallelMergeStrategy { ... }
-   public enum ErrorHandlingStrategy { ... }
-   ```
-
-### Files to Create/Modify
-- `Sources/SwiftAgents/Orchestration/AgentOperators.swift` (new)
-- `Sources/SwiftAgents/Orchestration/ParallelComposition.swift` (new)
-- `Sources/SwiftAgents/Orchestration/SequentialComposition.swift` (new)
-- `Sources/SwiftAgents/Orchestration/ConditionalRouter.swift` (new)
+        var results: [(String, SendableValue)] = []
+        for try await result in group {
+            results.append(result)
+        }
+        return results
+    }
+}
+```
 
 ---
 
-## Feature 9: InferenceOptions Builder
+## Phase 6: Future Enhancements
 
-**Priority:** Low
-**Tests:** `InferenceOptionsBuilderTests.swift`
-**Location:** `Sources/SwiftAgents/Core/Agent.swift`
+### MCP Integration (Model Context Protocol)
 
-### Implementation Steps
+```swift
+// Sources/SwiftAgents/MCP/MCPServer.swift
 
-1. **Add fluent setter methods to InferenceOptions**
-   ```swift
-   extension InferenceOptions {
-       func temperature(_ value: Double) -> InferenceOptions
-       func maxTokens(_ value: Int) -> InferenceOptions
-       func stopSequences(_ sequences: String...) -> InferenceOptions
-       func topP(_ value: Double) -> InferenceOptions
-       func topK(_ value: Int) -> InferenceOptions
-   }
-   ```
+/// Protocol for MCP server integration
+public protocol MCPServer: Sendable {
+    var name: String { get }
+    var capabilities: MCPCapabilities { get }
 
-2. **Add extended properties to InferenceOptions**
-   ```swift
-   public struct InferenceOptions {
-       // Existing
-       public var temperature: Double
-       public var maxTokens: Int?
-       public var stopSequences: [String]
+    func listTools() async throws -> [ToolDefinition]
+    func callTool(name: String, arguments: [String: SendableValue]) async throws -> SendableValue
+    func listResources() async throws -> [MCPResource]
+    func readResource(uri: String) async throws -> MCPResourceContent
+}
 
-       // New
-       public var topP: Double?
-       public var topK: Int?
-       public var presencePenalty: Double?
-       public var frequencyPenalty: Double?
-   }
-   ```
+public struct MCPCapabilities: Sendable {
+    public let tools: Bool
+    public let resources: Bool
+    public let prompts: Bool
+}
 
-3. **Create preset configurations**
-   ```swift
-   extension InferenceOptions {
-       static var creative: InferenceOptions
-       static var precise: InferenceOptions
-       static var balanced: InferenceOptions
-       static var codeGeneration: InferenceOptions
-   }
-   ```
+public struct MCPResource: Sendable {
+    public let uri: String
+    public let name: String
+    public let mimeType: String?
+}
 
-4. **Add InferenceOptionsBuilder class for complex builds**
-   ```swift
-   public class InferenceOptionsBuilder {
-       func setTemperature(_ value: Double) -> Self
-       func build() -> InferenceOptions
-   }
-   ```
+public struct MCPResourceContent: Sendable {
+    public let uri: String
+    public let mimeType: String?
+    public let text: String?
+    public let blob: Data?
+}
+```
 
-### Files to Create/Modify
-- `Sources/SwiftAgents/Core/Agent.swift` (modify)
+### Extended Model Settings
 
----
+```swift
+// Sources/SwiftAgents/Core/ModelSettings.swift
 
-## Feature 10: Stream Operations DSL
+/// Comprehensive model configuration settings
+public struct ModelSettings: Sendable {
+    public var temperature: Double?
+    public var topP: Double?
+    public var maxTokens: Int?
+    public var frequencyPenalty: Double?
+    public var presencePenalty: Double?
+    public var stopSequences: [String]?
+    public var seed: Int?
 
-**Priority:** Low
-**Tests:** `StreamOperationsTests.swift`
-**Location:** `Sources/SwiftAgents/Extensions/StreamOperations.swift`
+    /// Tool selection strategy
+    public var toolChoice: ToolChoice?
 
-### Implementation Steps
+    /// Whether to allow parallel tool calls
+    public var parallelToolCalls: Bool?
 
-1. **Add filter operations**
-   ```swift
-   extension AsyncThrowingStream where Element == AgentEvent {
-       func filter(_ predicate: @escaping (AgentEvent) -> Bool) -> AsyncThrowingStream
-       func filterThinking() -> AsyncThrowingStream
-   }
-   ```
+    /// Truncation strategy
+    public var truncation: TruncationStrategy?
 
-2. **Add map operations**
-   ```swift
-   extension AsyncThrowingStream where Element == AgentEvent {
-       func map<T>(_ transform: @escaping (AgentEvent) -> T) -> AsyncThrowingStream<T, Error>
-       var thoughts: AsyncThrowingStream<String, Error>
-       var toolCalls: AsyncThrowingStream<ToolCallInfo, Error>
-   }
-   ```
+    /// Response verbosity level
+    public var verbosity: Verbosity?
 
-3. **Add collection operations**
-   ```swift
-   extension AsyncThrowingStream where Element == AgentEvent {
-       func collect() async throws -> [AgentEvent]
-       func collect(maxCount: Int) async throws -> [AgentEvent]
-       func first(where: (AgentEvent) -> Bool) async throws -> AgentEvent?
-       func last() async throws -> AgentEvent?
-   }
-   ```
+    /// Prompt cache retention
+    public var promptCacheRetention: CacheRetention?
 
-4. **Add flow control operations**
-   ```swift
-   extension AsyncThrowingStream where Element == AgentEvent {
-       func take(_ count: Int) -> AsyncThrowingStream
-       func drop(_ count: Int) -> AsyncThrowingStream
-       func timeout(after: Duration) -> AsyncThrowingStream
-   }
-   ```
+    public init() {}
+}
 
-5. **Add side effect operations**
-   ```swift
-   extension AsyncThrowingStream where Element == AgentEvent {
-       func onEach(_ action: @escaping (AgentEvent) -> Void) -> AsyncThrowingStream
-       func onComplete(_ action: @escaping (AgentResult) -> Void) -> AsyncThrowingStream
-   }
-   ```
+public enum ToolChoice: Sendable {
+    case auto
+    case none
+    case required
+    case specific(toolName: String)
+}
 
-### Files to Create/Modify
-- `Sources/SwiftAgents/Extensions/StreamOperations.swift` (new)
+public enum TruncationStrategy: String, Sendable {
+    case auto
+    case disabled
+}
 
----
+public enum Verbosity: String, Sendable {
+    case low
+    case medium
+    case high
+}
 
-## Implementation Schedule
-
-### Week 1: Foundation
-- [ ] Feature 1: TypedTool Protocol
-- [ ] Feature 2: ToolParameterBuilder DSL
-
-### Week 2: Builders
-- [ ] Feature 3: AgentBuilder DSL
-- [ ] Feature 9: InferenceOptions Builder
-
-### Week 3: Context & Memory
-- [ ] Feature 5: Typed ContextKey
-- [ ] Feature 7: MemoryBuilder DSL
-
-### Week 4: Composition
-- [ ] Feature 4: Typed Pipeline Operators
-- [ ] Feature 8: Agent Composition Operators
-
-### Week 5: Resilience & Streams
-- [ ] Feature 6: Fluent Resilience Integration
-- [ ] Feature 10: Stream Operations DSL
+public enum CacheRetention: String, Sendable {
+    case inMemory = "in_memory"
+    case twentyFourHours = "24h"
+}
+```
 
 ---
 
 ## Testing Strategy
 
-1. **Run tests before implementation (TDD)**
-   - Tests should initially fail
-   - Implement until tests pass
+### Unit Test Template
 
-2. **Run full test suite after each feature**
-   ```bash
-   swift test --filter DSL
-   ```
+```swift
+import XCTest
+@testable import SwiftAgents
 
-3. **Run integration tests**
-   ```bash
-   swift test
-   ```
+final class GuardrailTests: XCTestCase {
 
-4. **Verify backward compatibility**
-   - Existing tests must continue passing
-   - No breaking changes to public API
+    func testInputGuardrailPasses() async throws {
+        let guardrail = ClosureInputGuardrail(name: "test") { input, _, _ in
+            .pass()
+        }
+
+        let mockAgent = MockAgent()
+        let context = AgentContext()
+
+        let result = try await guardrail.validate("Hello", agent: mockAgent, context: context)
+        XCTAssertFalse(result.tripwireTriggered)
+    }
+
+    func testInputGuardrailTriggered() async throws {
+        let guardrail = ClosureInputGuardrail(name: "blocker") { input, _, _ in
+            if input.contains("blocked") {
+                return .fail(message: "Blocked content detected")
+            }
+            return .pass()
+        }
+
+        let mockAgent = MockAgent()
+        let context = AgentContext()
+
+        let result = try await guardrail.validate("This is blocked content", agent: mockAgent, context: context)
+        XCTAssertTrue(result.tripwireTriggered)
+        XCTAssertEqual(result.message, "Blocked content detected")
+    }
+
+    func testGuardrailRunnerThrowsOnTripwire() async {
+        let guardrail = ClosureInputGuardrail(name: "blocker") { _, _, _ in
+            .fail(message: "Always fails")
+        }
+
+        let runner = GuardrailRunner()
+        let mockAgent = MockAgent()
+        let context = AgentContext()
+
+        do {
+            _ = try await runner.runInputGuardrails(
+                [guardrail],
+                input: "test",
+                agent: mockAgent,
+                context: context
+            )
+            XCTFail("Should have thrown")
+        } catch let error as GuardrailError {
+            if case .inputTripwireTriggered(let name, let message, _) = error {
+                XCTAssertEqual(name, "blocker")
+                XCTAssertEqual(message, "Always fails")
+            } else {
+                XCTFail("Wrong error type")
+            }
+        }
+    }
+}
+```
 
 ---
 
-## Documentation Requirements
+## Summary
 
-For each feature:
-1. Update API documentation with examples
-2. Add DocC comments to all public types
-3. Update README.md with new capabilities
-4. Add migration guide for any changes
+This implementation plan provides:
 
----
+1. **Complete code examples** for each phase
+2. **OpenAI SDK references** showing the patterns to follow
+3. **Integration points** with existing SwiftAgents code
+4. **Testing templates** for verification
+5. **File organization** following existing patterns
 
-## Verification Checklist
-
-Before merging each feature:
-
-- [ ] All new tests pass
-- [ ] All existing tests pass
-- [ ] No compiler warnings
-- [ ] SwiftFormat applied
-- [ ] Public types are `Sendable`
-- [ ] DocC comments on public APIs
-- [ ] No breaking changes to existing API
+The coding agent should implement these in order, testing each phase before moving to the next.

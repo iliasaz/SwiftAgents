@@ -24,6 +24,8 @@ public struct MockTool: Tool, Sendable {
     public let name: String
     public let description: String
     public let parameters: [ToolParameter]
+    public let inputGuardrails: [any ToolInputGuardrail]
+    public let outputGuardrails: [any ToolOutputGuardrail]
 
     /// Creates a mock tool with a fixed result.
     /// - Parameters:
@@ -31,15 +33,21 @@ public struct MockTool: Tool, Sendable {
     ///   - description: The tool description.
     ///   - parameters: The tool parameters.
     ///   - result: The fixed result to return.
+    ///   - inputGuardrails: Input guardrails for the tool.
+    ///   - outputGuardrails: Output guardrails for the tool.
     public init(
         name: String = "mock_tool",
         description: String = "A mock tool for testing",
         parameters: [ToolParameter] = [],
-        result: SendableValue = .string("mock result")
+        result: SendableValue = .string("mock result"),
+        inputGuardrails: [any ToolInputGuardrail] = [],
+        outputGuardrails: [any ToolOutputGuardrail] = []
     ) {
         self.name = name
         self.description = description
         self.parameters = parameters
+        self.inputGuardrails = inputGuardrails
+        self.outputGuardrails = outputGuardrails
         resultHandler = { _ in result }
     }
 
@@ -49,15 +57,21 @@ public struct MockTool: Tool, Sendable {
     ///   - description: The tool description.
     ///   - parameters: The tool parameters.
     ///   - handler: The custom execution handler.
+    ///   - inputGuardrails: Input guardrails for the tool.
+    ///   - outputGuardrails: Output guardrails for the tool.
     public init(
         name: String,
         description: String = "A mock tool for testing",
         parameters: [ToolParameter] = [],
+        inputGuardrails: [any ToolInputGuardrail] = [],
+        outputGuardrails: [any ToolOutputGuardrail] = [],
         handler: @escaping @Sendable ([String: SendableValue]) async throws -> SendableValue
     ) {
         self.name = name
         self.description = description
         self.parameters = parameters
+        self.inputGuardrails = inputGuardrails
+        self.outputGuardrails = outputGuardrails
         resultHandler = handler
     }
 
@@ -77,19 +91,27 @@ public struct FailingTool: Tool, Sendable {
     public let name: String
     public let description: String
     public let parameters: [ToolParameter]
+    public let inputGuardrails: [any ToolInputGuardrail]
+    public let outputGuardrails: [any ToolOutputGuardrail]
     public let error: Error
 
     /// Creates a tool that always fails.
     /// - Parameters:
     ///   - name: The tool name.
     ///   - error: The error to throw.
+    ///   - inputGuardrails: Input guardrails for the tool.
+    ///   - outputGuardrails: Output guardrails for the tool.
     public init(
         name: String = "failing_tool",
-        error: Error = AgentError.toolExecutionFailed(toolName: "failing_tool", underlyingError: "Intentional failure")
+        error: Error = AgentError.toolExecutionFailed(toolName: "failing_tool", underlyingError: "Intentional failure"),
+        inputGuardrails: [any ToolInputGuardrail] = [],
+        outputGuardrails: [any ToolOutputGuardrail] = []
     ) {
         self.name = name
         description = "A tool that always fails"
         parameters = []
+        self.inputGuardrails = inputGuardrails
+        self.outputGuardrails = outputGuardrails
         self.error = error
     }
 
@@ -107,6 +129,8 @@ public actor SpyTool: Tool {
     nonisolated public let name: String
     nonisolated public let description: String
     nonisolated public let parameters: [ToolParameter]
+    nonisolated public let inputGuardrails: [any ToolInputGuardrail]
+    nonisolated public let outputGuardrails: [any ToolOutputGuardrail]
 
     /// The number of times the tool was called.
     public var callCount: Int {
@@ -128,14 +152,20 @@ public actor SpyTool: Tool {
     ///   - name: The tool name.
     ///   - result: The result to return.
     ///   - delay: Delay before returning.
+    ///   - inputGuardrails: Input guardrails for the tool.
+    ///   - outputGuardrails: Output guardrails for the tool.
     public init(
         name: String = "spy_tool",
         result: SendableValue = .string("spy result"),
-        delay: Duration = .zero
+        delay: Duration = .zero,
+        inputGuardrails: [any ToolInputGuardrail] = [],
+        outputGuardrails: [any ToolOutputGuardrail] = []
     ) {
         self.name = name
         description = "A spy tool that records calls"
         parameters = []
+        self.inputGuardrails = inputGuardrails
+        self.outputGuardrails = outputGuardrails
         self.result = result
         self.delay = delay
     }
@@ -178,8 +208,16 @@ public struct EchoTool: Tool, Sendable {
     public let parameters: [ToolParameter] = [
         ToolParameter(name: "message", description: "Message to echo", type: .string, isRequired: false)
     ]
+    public let inputGuardrails: [any ToolInputGuardrail]
+    public let outputGuardrails: [any ToolOutputGuardrail]
 
-    public init() {}
+    public init(
+        inputGuardrails: [any ToolInputGuardrail] = [],
+        outputGuardrails: [any ToolOutputGuardrail] = []
+    ) {
+        self.inputGuardrails = inputGuardrails
+        self.outputGuardrails = outputGuardrails
+    }
 
     public func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
         .dictionary(arguments)

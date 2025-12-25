@@ -39,6 +39,12 @@ public protocol Tool: Sendable {
     /// The parameters this tool accepts.
     var parameters: [ToolParameter] { get }
 
+    /// Input guardrails for this tool.
+    var inputGuardrails: [any ToolInputGuardrail] { get }
+
+    /// Output guardrails for this tool.
+    var outputGuardrails: [any ToolOutputGuardrail] { get }
+
     /// Executes the tool with the given arguments.
     /// - Parameter arguments: The arguments passed to the tool.
     /// - Returns: The result of the tool execution.
@@ -53,6 +59,12 @@ public extension Tool {
     var definition: ToolDefinition {
         ToolDefinition(from: self)
     }
+
+    /// Default input guardrails (none).
+    var inputGuardrails: [any ToolInputGuardrail] { [] }
+
+    /// Default output guardrails (none).
+    var outputGuardrails: [any ToolOutputGuardrail] { [] }
 
     /// Validates that the given arguments match this tool's parameters.
     /// - Parameter arguments: The arguments to validate.
@@ -284,19 +296,44 @@ public actor ToolRegistry {
     /// - Parameters:
     ///   - name: The name of the tool to execute.
     ///   - arguments: The arguments to pass to the tool.
+    ///   - agent: Optional agent executing the tool (for guardrail validation).
+    ///   - context: Optional agent context for guardrail validation.
     /// - Returns: The result of the tool execution.
     /// - Throws: `AgentError.toolNotFound` if the tool doesn't exist,
-    ///           or `AgentError.toolExecutionFailed` if execution fails.
+    ///           `AgentError.toolExecutionFailed` if execution fails,
+    ///           `GuardrailError` if guardrails are triggered,
+    ///           or `CancellationError` if the task is cancelled.
     public func execute(
         toolNamed name: String,
-        arguments: [String: SendableValue]
+        arguments: [String: SendableValue],
+        agent: (any Agent)? = nil,
+        context: AgentContext? = nil
     ) async throws -> SendableValue {
+        // Check for cancellation before proceeding
+        try Task.checkCancellation()
+
         guard let tool = tools[name] else {
             throw AgentError.toolNotFound(name: name)
         }
 
+        // Create a single GuardrailRunner instance for both input and output guardrails
+        let runner = GuardrailRunner()
+        let data = ToolGuardrailData(tool: tool, arguments: arguments, agent: agent, context: context)
+
+        // Run input guardrails
+        if !tool.inputGuardrails.isEmpty {
+            _ = try await runner.runToolInputGuardrails(tool.inputGuardrails, data: data)
+        }
+
         do {
-            return try await tool.execute(arguments: arguments)
+            let result = try await tool.execute(arguments: arguments)
+
+            // Run output guardrails
+            if !tool.outputGuardrails.isEmpty {
+                _ = try await runner.runToolOutputGuardrails(tool.outputGuardrails, data: data, output: result)
+            }
+
+            return result
         } catch let error as AgentError {
             throw error
         } catch {

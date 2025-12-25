@@ -258,6 +258,7 @@ public struct AgentBuilder {
         var tracer: (any Tracer)?
         var inputGuardrails: [any InputGuardrail] = []
         var outputGuardrails: [any OutputGuardrail] = []
+        var guardrailRunnerConfiguration: GuardrailRunnerConfiguration?
     }
 
     /// Builds a block of components.
@@ -283,6 +284,9 @@ public struct AgentBuilder {
             }
             result.inputGuardrails.append(contentsOf: component.inputGuardrails)
             result.outputGuardrails.append(contentsOf: component.outputGuardrails)
+            if let guardrailRunnerConfiguration = component.guardrailRunnerConfiguration {
+                result.guardrailRunnerConfiguration = guardrailRunnerConfiguration
+            }
         }
         return result
     }

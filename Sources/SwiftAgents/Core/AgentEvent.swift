@@ -44,6 +44,9 @@ public enum AgentEvent: Sendable {
     /// Agent execution was cancelled.
     case cancelled
 
+    /// Guardrail validation failed.
+    case guardrailFailed(error: GuardrailError)
+
     // MARK: - Thinking Events
 
     /// Agent is thinking/reasoning (ReAct "Thought" step).
@@ -215,6 +218,8 @@ extension AgentEvent: Equatable {
             lhsError == rhsError
         case (.cancelled, .cancelled):
             true
+        case let (.guardrailFailed(lhsError), .guardrailFailed(rhsError)):
+            lhsError == rhsError
         case let (.thinking(lhsThought), .thinking(rhsThought)):
             lhsThought == rhsThought
         case let (.thinkingPartial(lhsPartial), .thinkingPartial(rhsPartial)):

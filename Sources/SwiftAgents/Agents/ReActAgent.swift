@@ -41,6 +41,7 @@ public actor ReActAgent: Agent {
     nonisolated public let tracer: (any Tracer)?
     nonisolated public let inputGuardrails: [any InputGuardrail]
     nonisolated public let outputGuardrails: [any OutputGuardrail]
+    nonisolated public let guardrailRunnerConfiguration: GuardrailRunnerConfiguration
 
     // MARK: - Initialization
 
@@ -54,6 +55,7 @@ public actor ReActAgent: Agent {
     ///   - tracer: Optional tracer for observability. Default: nil
     ///   - inputGuardrails: Input validation guardrails. Default: []
     ///   - outputGuardrails: Output validation guardrails. Default: []
+    ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     public init(
         tools: [any Tool] = [],
         instructions: String = "",
@@ -62,7 +64,8 @@ public actor ReActAgent: Agent {
         inferenceProvider: (any InferenceProvider)? = nil,
         tracer: (any Tracer)? = nil,
         inputGuardrails: [any InputGuardrail] = [],
-        outputGuardrails: [any OutputGuardrail] = []
+        outputGuardrails: [any OutputGuardrail] = [],
+        guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default
     ) {
         self.tools = tools
         self.instructions = instructions
@@ -72,6 +75,7 @@ public actor ReActAgent: Agent {
         self.tracer = tracer
         self.inputGuardrails = inputGuardrails
         self.outputGuardrails = outputGuardrails
+        self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
         toolRegistry = ToolRegistry(tools: tools)
     }
 
@@ -87,7 +91,7 @@ public actor ReActAgent: Agent {
         }
 
         // Run input guardrails
-        let runner = GuardrailRunner()
+        let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration)
         _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
         isCancelled = false
@@ -171,12 +175,19 @@ public actor ReActAgent: Agent {
     ) async throws -> String {
         var iteration = 0
         var scratchpad = "" // Accumulates Thought-Action-Observation history
+        let startTime = ContinuousClock.now
 
         while iteration < configuration.maxIterations {
             // Check for cancellation
             try Task.checkCancellation()
             if isCancelled {
                 throw AgentError.cancelled
+            }
+
+            // Check timeout
+            let elapsed = ContinuousClock.now - startTime
+            if elapsed > configuration.timeout {
+                throw AgentError.timeout(duration: configuration.timeout)
             }
 
             iteration += 1
@@ -213,7 +224,9 @@ public actor ReActAgent: Agent {
                 do {
                     let toolResult = try await toolRegistry.execute(
                         toolNamed: toolName,
-                        arguments: arguments
+                        arguments: arguments,
+                        agent: self,
+                        context: nil
                     )
                     let duration = ContinuousClock.now - startTime
 
@@ -541,6 +554,7 @@ public extension ReActAgent {
         /// Sets the tools.
         /// - Parameter tools: The tools to use.
         /// - Returns: A new builder with the updated tools.
+        @discardableResult
         public func tools(_ tools: [any Tool]) -> Builder {
             var copy = self
             copy.tools = tools
@@ -550,6 +564,7 @@ public extension ReActAgent {
         /// Adds a tool.
         /// - Parameter tool: The tool to add.
         /// - Returns: A new builder with the tool added.
+        @discardableResult
         public func addTool(_ tool: any Tool) -> Builder {
             var copy = self
             copy.tools.append(tool)
@@ -558,6 +573,7 @@ public extension ReActAgent {
 
         /// Adds built-in tools.
         /// - Returns: A new builder with built-in tools added.
+        @discardableResult
         public func withBuiltInTools() -> Builder {
             var copy = self
             copy.tools.append(contentsOf: BuiltInTools.all)
@@ -567,6 +583,7 @@ public extension ReActAgent {
         /// Sets the instructions.
         /// - Parameter instructions: The system instructions.
         /// - Returns: A new builder with the updated instructions.
+        @discardableResult
         public func instructions(_ instructions: String) -> Builder {
             var copy = self
             copy.instructions = instructions
@@ -576,6 +593,7 @@ public extension ReActAgent {
         /// Sets the configuration.
         /// - Parameter configuration: The agent configuration.
         /// - Returns: A new builder with the updated configuration.
+        @discardableResult
         public func configuration(_ configuration: AgentConfiguration) -> Builder {
             var copy = self
             copy.configuration = configuration
@@ -585,6 +603,7 @@ public extension ReActAgent {
         /// Sets the memory system.
         /// - Parameter memory: The memory to use.
         /// - Returns: A new builder with the updated memory.
+        @discardableResult
         public func memory(_ memory: any Memory) -> Builder {
             var copy = self
             copy.memory = memory
@@ -594,6 +613,7 @@ public extension ReActAgent {
         /// Sets the inference provider.
         /// - Parameter provider: The provider to use.
         /// - Returns: A new builder with the updated provider.
+        @discardableResult
         public func inferenceProvider(_ provider: any InferenceProvider) -> Builder {
             var copy = self
             copy.inferenceProvider = provider
@@ -603,6 +623,7 @@ public extension ReActAgent {
         /// Sets the tracer for observability.
         /// - Parameter tracer: The tracer to use.
         /// - Returns: A new builder with the updated tracer.
+        @discardableResult
         public func tracer(_ tracer: any Tracer) -> Builder {
             var copy = self
             copy.tracer = tracer
@@ -612,6 +633,7 @@ public extension ReActAgent {
         /// Sets the input guardrails.
         /// - Parameter guardrails: The input guardrails to use.
         /// - Returns: A new builder with the updated guardrails.
+        @discardableResult
         public func inputGuardrails(_ guardrails: [any InputGuardrail]) -> Builder {
             var copy = self
             copy.inputGuardrails = guardrails
@@ -621,6 +643,7 @@ public extension ReActAgent {
         /// Adds an input guardrail.
         /// - Parameter guardrail: The guardrail to add.
         /// - Returns: A new builder with the guardrail added.
+        @discardableResult
         public func addInputGuardrail(_ guardrail: any InputGuardrail) -> Builder {
             var copy = self
             copy.inputGuardrails.append(guardrail)
@@ -630,6 +653,7 @@ public extension ReActAgent {
         /// Sets the output guardrails.
         /// - Parameter guardrails: The output guardrails to use.
         /// - Returns: A new builder with the updated guardrails.
+        @discardableResult
         public func outputGuardrails(_ guardrails: [any OutputGuardrail]) -> Builder {
             var copy = self
             copy.outputGuardrails = guardrails
@@ -639,9 +663,20 @@ public extension ReActAgent {
         /// Adds an output guardrail.
         /// - Parameter guardrail: The guardrail to add.
         /// - Returns: A new builder with the guardrail added.
+        @discardableResult
         public func addOutputGuardrail(_ guardrail: any OutputGuardrail) -> Builder {
             var copy = self
             copy.outputGuardrails.append(guardrail)
+            return copy
+        }
+
+        /// Sets the guardrail runner configuration.
+        /// - Parameter configuration: The guardrail runner configuration.
+        /// - Returns: A new builder with the updated configuration.
+        @discardableResult
+        public func guardrailRunnerConfiguration(_ configuration: GuardrailRunnerConfiguration) -> Builder {
+            var copy = self
+            copy.guardrailRunnerConfiguration = configuration
             return copy
         }
 
@@ -656,7 +691,8 @@ public extension ReActAgent {
                 inferenceProvider: inferenceProvider,
                 tracer: tracer,
                 inputGuardrails: inputGuardrails,
-                outputGuardrails: outputGuardrails
+                outputGuardrails: outputGuardrails,
+                guardrailRunnerConfiguration: guardrailRunnerConfiguration
             )
         }
 
@@ -670,5 +706,6 @@ public extension ReActAgent {
         private var tracer: (any Tracer)?
         private var inputGuardrails: [any InputGuardrail]
         private var outputGuardrails: [any OutputGuardrail]
+        private var guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default
     }
 }

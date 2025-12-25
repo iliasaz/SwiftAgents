@@ -49,7 +49,17 @@ public struct GuardrailRunnerConfiguration: Sendable, Equatable {
     ///
     /// - Parameters:
     ///   - runInParallel: Whether to run guardrails concurrently. Default: false
+    ///     - `false`: Guardrails run sequentially, maintaining order and dependencies
+    ///     - `true`: Guardrails run concurrently for better performance (order not guaranteed)
     ///   - stopOnFirstTripwire: Whether to stop on first tripwire. Default: true
+    ///     - `true`: Stop immediately when any guardrail triggers (faster, less information)
+    ///     - `false`: Run all guardrails even after tripwires (slower, more diagnostic info)
+    ///
+    /// ## Performance Notes
+    ///
+    /// - Parallel execution is faster but results may arrive out of order
+    /// - Stop-on-first is recommended for production (fail-fast)
+    /// - Run-all is useful for testing and diagnostics
     public init(runInParallel: Bool = false, stopOnFirstTripwire: Bool = true) {
         self.runInParallel = runInParallel
         self.stopOnFirstTripwire = stopOnFirstTripwire
@@ -102,6 +112,18 @@ public struct GuardrailExecutionResult: Sendable, Equatable {
     public init(guardrailName: String, result: GuardrailResult) {
         self.guardrailName = guardrailName
         self.result = result
+    }
+
+    // MARK: - Convenience Properties
+
+    /// Whether this execution triggered a tripwire.
+    public var didTriggerTripwire: Bool {
+        result.tripwireTriggered
+    }
+
+    /// Whether this execution passed without triggering.
+    public var passed: Bool {
+        !result.tripwireTriggered
     }
 }
 
@@ -474,7 +496,9 @@ public actor GuardrailRunner {
         input: String,
         context: AgentContext?
     ) async throws -> [GuardrailExecutionResult] {
-        try await withThrowingTaskGroup(of: GuardrailExecutionResult.self) { group in
+        try Task.checkCancellation()
+
+        return try await withThrowingTaskGroup(of: GuardrailExecutionResult.self) { group in
             var results: [GuardrailExecutionResult] = []
             results.reserveCapacity(guardrails.count)
 
@@ -492,7 +516,7 @@ public actor GuardrailRunner {
                     } catch {
                         throw GuardrailError.executionFailed(
                             guardrailName: guardrail.name,
-                            underlyingError: String(describing: error)
+                            underlyingError: error.localizedDescription
                         )
                     }
                 }
@@ -531,6 +555,8 @@ public actor GuardrailRunner {
         agent: any Agent,
         context: AgentContext?
     ) async throws -> [GuardrailExecutionResult] {
+        try Task.checkCancellation()
+
         let agentName = agent.configuration.name
 
         return try await withThrowingTaskGroup(of: GuardrailExecutionResult.self) { group in
@@ -551,7 +577,7 @@ public actor GuardrailRunner {
                     } catch {
                         throw GuardrailError.executionFailed(
                             guardrailName: guardrail.name,
-                            underlyingError: String(describing: error)
+                            underlyingError: error.localizedDescription
                         )
                     }
                 }
@@ -590,6 +616,8 @@ public actor GuardrailRunner {
         _ guardrails: [any ToolInputGuardrail],
         data: ToolGuardrailData
     ) async throws -> [GuardrailExecutionResult] {
+        try Task.checkCancellation()
+
         let toolName = data.tool.name
 
         return try await withThrowingTaskGroup(of: GuardrailExecutionResult.self) { group in
@@ -610,7 +638,7 @@ public actor GuardrailRunner {
                     } catch {
                         throw GuardrailError.executionFailed(
                             guardrailName: guardrail.name,
-                            underlyingError: String(describing: error)
+                            underlyingError: error.localizedDescription
                         )
                     }
                 }
@@ -650,6 +678,8 @@ public actor GuardrailRunner {
         data: ToolGuardrailData,
         output: SendableValue
     ) async throws -> [GuardrailExecutionResult] {
+        try Task.checkCancellation()
+
         let toolName = data.tool.name
 
         return try await withThrowingTaskGroup(of: GuardrailExecutionResult.self) { group in
@@ -670,7 +700,7 @@ public actor GuardrailRunner {
                     } catch {
                         throw GuardrailError.executionFailed(
                             guardrailName: guardrail.name,
-                            underlyingError: String(describing: error)
+                            underlyingError: error.localizedDescription
                         )
                     }
                 }

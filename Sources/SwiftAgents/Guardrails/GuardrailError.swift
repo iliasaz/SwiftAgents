@@ -8,7 +8,7 @@ import Foundation
 // MARK: - GuardrailError
 
 /// Errors related to guardrail execution.
-public enum GuardrailError: Error, Sendable, LocalizedError {
+public enum GuardrailError: Error, Sendable, LocalizedError, Equatable {
     /// Input guardrail tripwire was triggered
     case inputTripwireTriggered(
         guardrailName: String,

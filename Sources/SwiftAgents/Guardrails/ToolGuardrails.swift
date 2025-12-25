@@ -6,6 +6,12 @@
 
 import Foundation
 
+/// Type alias for tool input validation handler closures.
+public typealias ToolInputValidationHandler = @Sendable (ToolGuardrailData) async throws -> GuardrailResult
+
+/// Type alias for tool output validation handler closures.
+public typealias ToolOutputValidationHandler = @Sendable (ToolGuardrailData, SendableValue) async throws -> GuardrailResult
+
 // MARK: - ToolGuardrailData
 
 /// Data container for tool guardrail validation.

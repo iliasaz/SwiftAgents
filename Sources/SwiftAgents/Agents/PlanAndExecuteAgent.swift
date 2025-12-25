@@ -256,6 +256,7 @@ public actor PlanAndExecuteAgent: Agent {
     nonisolated public let tracer: (any Tracer)?
     nonisolated public let inputGuardrails: [any InputGuardrail]
     nonisolated public let outputGuardrails: [any OutputGuardrail]
+    nonisolated public let guardrailRunnerConfiguration: GuardrailRunnerConfiguration
 
     // MARK: - Plan-and-Execute Specific Configuration
 
@@ -286,6 +287,7 @@ public actor PlanAndExecuteAgent: Agent {
     ///   - tracer: Optional tracer for observability. Default: nil
     ///   - inputGuardrails: Input validation guardrails. Default: []
     ///   - outputGuardrails: Output validation guardrails. Default: []
+    ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     ///   - maxReplanAttempts: Maximum replan attempts. Default: 3
     public init(
         tools: [any Tool] = [],
@@ -296,6 +298,7 @@ public actor PlanAndExecuteAgent: Agent {
         tracer: (any Tracer)? = nil,
         inputGuardrails: [any InputGuardrail] = [],
         outputGuardrails: [any OutputGuardrail] = [],
+        guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default,
         maxReplanAttempts: Int = 3
     ) {
         self.tools = tools
@@ -306,6 +309,7 @@ public actor PlanAndExecuteAgent: Agent {
         self.tracer = tracer
         self.inputGuardrails = inputGuardrails
         self.outputGuardrails = outputGuardrails
+        self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
         self.maxReplanAttempts = maxReplanAttempts
         toolRegistry = ToolRegistry(tools: tools)
     }
@@ -322,7 +326,7 @@ public actor PlanAndExecuteAgent: Agent {
         }
 
         // Run input guardrails at the start before any processing
-        let runner = GuardrailRunner()
+        let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration)
         _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
         cancellationState = .active
@@ -670,7 +674,9 @@ public actor PlanAndExecuteAgent: Agent {
             do {
                 let toolResult = try await toolRegistry.execute(
                     toolNamed: toolName,
-                    arguments: step.toolArguments
+                    arguments: step.toolArguments,
+                    agent: self,
+                    context: nil
                 )
                 let duration = ContinuousClock.now - startTime
 
@@ -1026,6 +1032,16 @@ public extension PlanAndExecuteAgent {
             return copy
         }
 
+        /// Sets the guardrail runner configuration.
+        /// - Parameter configuration: The guardrail runner configuration.
+        /// - Returns: Self for chaining.
+        @discardableResult
+        public func guardrailRunnerConfiguration(_ configuration: GuardrailRunnerConfiguration) -> Builder {
+            var copy = self
+            copy._guardrailRunnerConfiguration = configuration
+            return copy
+        }
+
         /// Builds the agent.
         /// - Returns: A new PlanAndExecuteAgent instance.
         public func build() -> PlanAndExecuteAgent {
@@ -1038,6 +1054,7 @@ public extension PlanAndExecuteAgent {
                 tracer: _tracer,
                 inputGuardrails: _inputGuardrails,
                 outputGuardrails: _outputGuardrails,
+                guardrailRunnerConfiguration: _guardrailRunnerConfiguration,
                 maxReplanAttempts: _maxReplanAttempts
             )
         }
@@ -1052,6 +1069,43 @@ public extension PlanAndExecuteAgent {
         private var _tracer: (any Tracer)?
         private var _inputGuardrails: [any InputGuardrail] = []
         private var _outputGuardrails: [any OutputGuardrail] = []
+        private var _guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default
         private var _maxReplanAttempts: Int = 3
+    }
+}
+
+// MARK: - PlanAndExecuteAgent DSL Extension
+
+public extension PlanAndExecuteAgent {
+    /// Creates a PlanAndExecuteAgent using the declarative builder DSL.
+    ///
+    /// Example:
+    /// ```swift
+    /// let agent = PlanAndExecuteAgent {
+    ///     Instructions("You are a research assistant.")
+    ///
+    ///     Tools {
+    ///         WebSearchTool()
+    ///         CalculatorTool()
+    ///     }
+    ///
+    ///     Configuration(.default.maxIterations(15))
+    /// }
+    /// ```
+    ///
+    /// - Parameter content: A closure that builds the agent components.
+    init(@AgentBuilder _ content: () -> AgentBuilder.Components) {
+        let components = content()
+        self.init(
+            tools: components.tools,
+            instructions: components.instructions ?? "",
+            configuration: components.configuration ?? .default,
+            memory: components.memory,
+            inferenceProvider: components.inferenceProvider,
+            tracer: components.tracer,
+            inputGuardrails: components.inputGuardrails,
+            outputGuardrails: components.outputGuardrails,
+            guardrailRunnerConfiguration: components.guardrailRunnerConfiguration ?? .default
+        )
     }
 }

@@ -40,6 +40,8 @@ public actor ToolCallingAgent: Agent {
     nonisolated public let inferenceProvider: (any InferenceProvider)?
     nonisolated public let inputGuardrails: [any InputGuardrail]
     nonisolated public let outputGuardrails: [any OutputGuardrail]
+    nonisolated public let tracer: (any Tracer)?
+    nonisolated public let guardrailRunnerConfiguration: GuardrailRunnerConfiguration
 
     // MARK: - Internal State
 
@@ -78,24 +80,30 @@ public actor ToolCallingAgent: Agent {
     ///   - configuration: Agent configuration settings. Default: .default
     ///   - memory: Optional memory system. Default: nil
     ///   - inferenceProvider: Optional custom inference provider. Default: nil
+    ///   - tracer: Optional tracer for observability. Default: nil
     ///   - inputGuardrails: Input validation guardrails. Default: []
     ///   - outputGuardrails: Output validation guardrails. Default: []
+    ///   - guardrailRunnerConfiguration: Configuration for guardrail runner. Default: .default
     public init(
         tools: [any Tool] = [],
         instructions: String = "",
         configuration: AgentConfiguration = .default,
         memory: (any Memory)? = nil,
         inferenceProvider: (any InferenceProvider)? = nil,
+        tracer: (any Tracer)? = nil,
         inputGuardrails: [any InputGuardrail] = [],
-        outputGuardrails: [any OutputGuardrail] = []
+        outputGuardrails: [any OutputGuardrail] = [],
+        guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default
     ) {
         self.tools = tools
         self.instructions = instructions
         self.configuration = configuration
         self.memory = memory
         self.inferenceProvider = inferenceProvider
+        self.tracer = tracer
         self.inputGuardrails = inputGuardrails
         self.outputGuardrails = outputGuardrails
+        self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
         self.toolRegistry = ToolRegistry(tools: tools)
     }
 
@@ -111,7 +119,7 @@ public actor ToolCallingAgent: Agent {
         }
 
         // Run input guardrails
-        let runner = GuardrailRunner()
+        let runner = GuardrailRunner(configuration: guardrailRunnerConfiguration)
         _ = try await runner.runInputGuardrails(inputGuardrails, input: input, context: nil)
 
         isCancelled = false
@@ -217,10 +225,7 @@ public actor ToolCallingAgent: Agent {
                     prompt: prompt,
                     options: InferenceOptions(temperature: configuration.temperature, maxTokens: configuration.maxTokens)
                 )
-                // Store and return
-                if let mem = memory {
-                    await mem.add(.assistant(content))
-                }
+                // Return content - memory storage handled by run() after guardrails
                 return content
             }
 
@@ -249,7 +254,9 @@ public actor ToolCallingAgent: Agent {
                     do {
                         let toolOutput = try await toolRegistry.execute(
                             toolNamed: parsedCall.name,
-                            arguments: parsedCall.arguments
+                            arguments: parsedCall.arguments,
+                            agent: self,
+                            context: nil
                         )
                         let duration = ContinuousClock.now - startTime
 
@@ -367,8 +374,10 @@ public extension ToolCallingAgent {
         private var _configuration: AgentConfiguration = .default
         private var _memory: (any Memory)?
         private var _inferenceProvider: (any InferenceProvider)?
+        private var _tracer: (any Tracer)?
         private var _inputGuardrails: [any InputGuardrail] = []
         private var _outputGuardrails: [any OutputGuardrail] = []
+        private var _guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default
 
         // MARK: - Initialization
 
@@ -446,6 +455,16 @@ public extension ToolCallingAgent {
             return copy
         }
 
+        /// Sets the tracer for observability.
+        /// - Parameter tracer: The tracer to use.
+        /// - Returns: A new builder with the tracer set.
+        @discardableResult
+        public func tracer(_ tracer: any Tracer) -> Builder {
+            var copy = self
+            copy._tracer = tracer
+            return copy
+        }
+
         /// Sets the input guardrails.
         /// - Parameter guardrails: The input guardrails to use.
         /// - Returns: A new builder with the guardrails set.
@@ -486,6 +505,16 @@ public extension ToolCallingAgent {
             return copy
         }
 
+        /// Sets the guardrail runner configuration.
+        /// - Parameter configuration: The guardrail runner configuration.
+        /// - Returns: A new builder with the updated configuration.
+        @discardableResult
+        public func guardrailRunnerConfiguration(_ configuration: GuardrailRunnerConfiguration) -> Builder {
+            var copy = self
+            copy._guardrailRunnerConfiguration = configuration
+            return copy
+        }
+
         /// Builds the agent.
         /// - Returns: A new ToolCallingAgent instance.
         public func build() -> ToolCallingAgent {
@@ -495,9 +524,47 @@ public extension ToolCallingAgent {
                 configuration: _configuration,
                 memory: _memory,
                 inferenceProvider: _inferenceProvider,
+                tracer: _tracer,
                 inputGuardrails: _inputGuardrails,
-                outputGuardrails: _outputGuardrails
+                outputGuardrails: _outputGuardrails,
+                guardrailRunnerConfiguration: _guardrailRunnerConfiguration
             )
         }
+    }
+}
+
+// MARK: - ToolCallingAgent DSL Extension
+
+public extension ToolCallingAgent {
+    /// Creates a ToolCallingAgent using the declarative builder DSL.
+    ///
+    /// Example:
+    /// ```swift
+    /// let agent = ToolCallingAgent {
+    ///     Instructions("You are a helpful assistant.")
+    ///
+    ///     Tools {
+    ///         WeatherTool()
+    ///         CalculatorTool()
+    ///     }
+    ///
+    ///     Configuration(.default.maxIterations(5))
+    /// }
+    /// ```
+    ///
+    /// - Parameter content: A closure that builds the agent components.
+    init(@AgentBuilder _ content: () -> AgentBuilder.Components) {
+        let components = content()
+        self.init(
+            tools: components.tools,
+            instructions: components.instructions ?? "",
+            configuration: components.configuration ?? .default,
+            memory: components.memory,
+            inferenceProvider: components.inferenceProvider,
+            tracer: components.tracer,
+            inputGuardrails: components.inputGuardrails,
+            outputGuardrails: components.outputGuardrails,
+            guardrailRunnerConfiguration: components.guardrailRunnerConfiguration ?? .default
+        )
     }
 }
