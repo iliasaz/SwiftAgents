@@ -486,7 +486,7 @@ public actor PlanAndExecuteAgent: Agent {
 
     private func generatePlan(for input: String, hooks: (any RunHooks)? = nil) async throws -> ExecutionPlan {
         let prompt = buildPlanningPrompt(for: input)
-        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [])
+        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [MemoryMessage.user(prompt)])
         let response = try await generateResponse(prompt: prompt)
         await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
         return parsePlan(from: response, goal: input)
@@ -737,7 +737,7 @@ public actor PlanAndExecuteAgent: Agent {
 
         // For steps without tools, use the LLM to execute
         let prompt = buildStepExecutionPrompt(step: step, plan: plan)
-        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [])
+        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [MemoryMessage.user(prompt)])
         let response = try await generateResponse(prompt: prompt)
         await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
         return response
@@ -770,7 +770,7 @@ public actor PlanAndExecuteAgent: Agent {
 
     private func replan(original: ExecutionPlan, input: String, hooks: (any RunHooks)? = nil) async throws -> ExecutionPlan {
         let prompt = buildReplanPrompt(original: original, input: input)
-        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [])
+        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [MemoryMessage.user(prompt)])
         let response = try await generateResponse(prompt: prompt)
         await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
         var newPlan = parsePlan(from: response, goal: input)
@@ -868,7 +868,7 @@ public actor PlanAndExecuteAgent: Agent {
         Synthesize a clear, concise final answer for the user based on the results above.
         """
 
-        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [])
+        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [MemoryMessage.user(prompt)])
         let response = try await generateResponse(prompt: prompt)
         await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
         return response

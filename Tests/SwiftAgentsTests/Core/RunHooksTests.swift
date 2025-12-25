@@ -35,48 +35,52 @@ private struct MockAgentForRunHooks: Agent {
 }
 
 /// Recording hook for testing - captures all events in order.
-private final class RecordingHooks: RunHooks, @unchecked Sendable {
+private actor RecordingHooks: RunHooks {
     var events: [String] = []
-    
+
     func onAgentStart(context: AgentContext?, agent: any Agent, input: String) async {
         events.append("agentStart:\(input)")
     }
-    
+
     func onAgentEnd(context: AgentContext?, agent: any Agent, result: AgentResult) async {
         events.append("agentEnd:\(result.output)")
     }
-    
+
     func onError(context: AgentContext?, agent: any Agent, error: Error) async {
         events.append("error:\(error.localizedDescription)")
     }
-    
+
     func onHandoff(context: AgentContext?, fromAgent: any Agent, toAgent: any Agent) async {
         events.append("handoff")
     }
-    
+
     func onToolStart(context: AgentContext?, agent: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {
         events.append("toolStart:\(tool.name)")
     }
-    
+
     func onToolEnd(context: AgentContext?, agent: any Agent, tool: any Tool, result: SendableValue) async {
         events.append("toolEnd:\(tool.name)")
     }
-    
+
     func onLLMStart(context: AgentContext?, agent: any Agent, systemPrompt: String?, inputMessages: [MemoryMessage]) async {
         events.append("llmStart:\(inputMessages.count)")
     }
-    
+
     func onLLMEnd(context: AgentContext?, agent: any Agent, response: String, usage: InferenceResponse.TokenUsage?) async {
         let tokens = usage.map { "\($0.inputTokens)/\($0.outputTokens)" } ?? "none"
         events.append("llmEnd:\(tokens)")
     }
-    
+
     func onGuardrailTriggered(context: AgentContext?, guardrailName: String, guardrailType: GuardrailType, result: GuardrailResult) async {
         events.append("guardrail:\(guardrailName):\(guardrailType.rawValue)")
     }
-    
+
     func reset() {
         events = []
+    }
+
+    func getEvents() -> [String] {
+        return events
     }
 }
 
@@ -153,50 +157,54 @@ struct CompositeRunHooksTests {
         
         // When: Calling onAgentStart
         await composite.onAgentStart(context: nil, agent: agent, input: "test input")
-        
+
         // Then: All hooks should receive the call
-        #expect(hooks1.events.contains("agentStart:test input"))
-        #expect(hooks2.events.contains("agentStart:test input"))
-        #expect(hooks3.events.contains("agentStart:test input"))
+        let events1 = await hooks1.getEvents()
+        let events2 = await hooks2.getEvents()
+        let events3 = await hooks3.getEvents()
+        #expect(events1.contains("agentStart:test input"))
+        #expect(events2.contains("agentStart:test input"))
+        #expect(events3.contains("agentStart:test input"))
     }
     
     @Test("CompositeRunHooks calls hooks in order")
     func compositeCallsHooksInOrder() async {
         // Given: A composite with ordered hooks
         let recorder = RecordingHooks()
-        
+
         struct FirstHook: RunHooks {
             let recorder: RecordingHooks
             func onAgentStart(context: AgentContext?, agent: any Agent, input: String) async {
-                recorder.events.append("first")
+                await recorder.onAgentStart(context: context, agent: agent, input: "first")
             }
         }
-        
+
         struct SecondHook: RunHooks {
             let recorder: RecordingHooks
             func onAgentStart(context: AgentContext?, agent: any Agent, input: String) async {
-                recorder.events.append("second")
+                await recorder.onAgentStart(context: context, agent: agent, input: "second")
             }
         }
-        
+
         struct ThirdHook: RunHooks {
             let recorder: RecordingHooks
             func onAgentStart(context: AgentContext?, agent: any Agent, input: String) async {
-                recorder.events.append("third")
+                await recorder.onAgentStart(context: context, agent: agent, input: "third")
             }
         }
-        
+
         let composite = CompositeRunHooks(hooks: [
             FirstHook(recorder: recorder),
             SecondHook(recorder: recorder),
             ThirdHook(recorder: recorder)
         ])
-        
+
         // When: Calling a hook method
         await composite.onAgentStart(context: nil, agent: MockAgentForRunHooks(), input: "test")
-        
+
         // Then: Hooks should be called in registration order
-        #expect(recorder.events == ["first", "second", "third"])
+        let events = await recorder.getEvents()
+        #expect(events == ["agentStart:first", "agentStart:second", "agentStart:third"])
     }
     
     @Test("CompositeRunHooks handles empty hook list")
@@ -240,15 +248,16 @@ struct CompositeRunHooksTests {
         )
         
         // Then: All events should be recorded
-        #expect(hooks.events.contains("agentStart:input"))
-        #expect(hooks.events.contains("agentEnd:output"))
-        #expect(hooks.events.contains { $0.starts(with: "error:") })
-        #expect(hooks.events.contains("handoff"))
-        #expect(hooks.events.contains("toolStart:calculator"))
-        #expect(hooks.events.contains("toolEnd:calculator"))
-        #expect(hooks.events.contains("llmStart:0"))
-        #expect(hooks.events.contains("llmEnd:none"))
-        #expect(hooks.events.contains("guardrail:pii_filter:output"))
+        let events = await hooks.getEvents()
+        #expect(events.contains("agentStart:input"))
+        #expect(events.contains("agentEnd:output"))
+        #expect(events.contains { $0.starts(with: "error:") })
+        #expect(events.contains("handoff"))
+        #expect(events.contains("toolStart:calculator"))
+        #expect(events.contains("toolEnd:calculator"))
+        #expect(events.contains("llmStart:0"))
+        #expect(events.contains("llmEnd:none"))
+        #expect(events.contains("guardrail:pii_filter:output"))
     }
 }
 
@@ -401,9 +410,10 @@ struct RunHooksIntegrationTests {
         await hooks.onToolStart(context: nil, agent: agent, tool: tool, arguments: ["expression": .string("2+2")])
         await hooks.onToolEnd(context: nil, agent: agent, tool: tool, result: .int(4))
         await hooks.onAgentEnd(context: nil, agent: agent, result: AgentResult(output: "The answer is 4"))
-        
+
         // Then: All events should be recorded in order
-        #expect(hooks.events == [
+        let events = await hooks.getEvents()
+        #expect(events == [
             "agentStart:Calculate 2+2",
             "llmStart:1",
             "llmEnd:10/5",
@@ -461,11 +471,13 @@ struct RunHooksIntegrationTests {
         await composite.onAgentStart(context: nil, agent: agent, input: "first")
         await composite.onAgentStart(context: nil, agent: agent, input: "second")
         await composite.onAgentEnd(context: nil, agent: agent, result: AgentResult(output: "done"))
-        
+
         // Then: Both hooks should have recorded all events independently
-        #expect(recorder1.events.count == 3)
-        #expect(recorder2.events.count == 3)
-        #expect(recorder1.events == recorder2.events)
+        let events1 = await recorder1.getEvents()
+        let events2 = await recorder2.getEvents()
+        #expect(events1.count == 3)
+        #expect(events2.count == 3)
+        #expect(events1 == events2)
     }
     
     @Test("Hooks work with and without context")
@@ -478,11 +490,12 @@ struct RunHooksIntegrationTests {
         // When: Calling with and without context
         await hooks.onAgentStart(context: nil, agent: agent, input: "no context")
         await hooks.onAgentStart(context: context, agent: agent, input: "with context")
-        
+
         // Then: Both calls should be recorded
-        #expect(hooks.events.count == 2)
-        #expect(hooks.events[0] == "agentStart:no context")
-        #expect(hooks.events[1] == "agentStart:with context")
+        let events = await hooks.getEvents()
+        #expect(events.count == 2)
+        #expect(events[0] == "agentStart:no context")
+        #expect(events[1] == "agentStart:with context")
     }
 }
 
@@ -499,8 +512,9 @@ struct RunHooksEdgeCaseTests {
         await hooks.onAgentStart(context: nil, agent: agent, input: "")
         await hooks.onAgentEnd(context: nil, agent: agent, result: AgentResult(output: ""))
         await hooks.onLLMEnd(context: nil, agent: agent, response: "", usage: nil)
-        
-        #expect(hooks.events.count == 3)
+
+        let events = await hooks.getEvents()
+        #expect(events.count == 3)
     }
     
     @Test("Hooks handle empty collections gracefully")
@@ -511,8 +525,9 @@ struct RunHooksEdgeCaseTests {
         
         await hooks.onToolStart(context: nil, agent: agent, tool: tool, arguments: [:])
         await hooks.onLLMStart(context: nil, agent: agent, systemPrompt: nil, inputMessages: [])
-        
-        #expect(hooks.events.count == 2)
+
+        let events = await hooks.getEvents()
+        #expect(events.count == 2)
     }
     
     @Test("Hooks handle nil optional values")
@@ -522,9 +537,10 @@ struct RunHooksEdgeCaseTests {
         
         await hooks.onLLMStart(context: nil, agent: agent, systemPrompt: nil, inputMessages: [])
         await hooks.onLLMEnd(context: nil, agent: agent, response: "response", usage: nil)
-        
-        #expect(hooks.events.contains("llmStart:0"))
-        #expect(hooks.events.contains("llmEnd:none"))
+
+        let events = await hooks.getEvents()
+        #expect(events.contains("llmStart:0"))
+        #expect(events.contains("llmEnd:none"))
     }
     
     @Test("CompositeRunHooks with single hook")
@@ -536,8 +552,9 @@ struct RunHooksEdgeCaseTests {
         
         // When: Using the composite
         await composite.onAgentStart(context: nil, agent: agent, input: "test")
-        
+
         // Then: Should work identically to using the hook directly
-        #expect(hooks.events == ["agentStart:test"])
+        let events = await hooks.getEvents()
+        #expect(events == ["agentStart:test"])
     }
 }

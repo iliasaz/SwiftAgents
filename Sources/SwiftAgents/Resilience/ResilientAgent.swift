@@ -153,6 +153,10 @@ public actor ResilientAgent: Agent {
             // Try fallback if available
             if let fallback = fallbackAgent {
                 do {
+                    // Notify hooks of handoff to fallback agent
+                    let fallbackContext = AgentContext(input: input)
+                    await hooks?.onHandoff(context: fallbackContext, fromAgent: self, toAgent: fallback)
+
                     let fallbackResult = try await fallback.run(input, hooks: hooks)
                     let duration = ContinuousClock.now - startTime
                     return addResilienceMetadata(to: fallbackResult, duration: duration, usedFallback: true, primaryError: error)

@@ -236,6 +236,11 @@ public actor SequentialChain: Agent {
             let agentName = String(describing: type(of: agent))
             await context?.recordExecution(agentName: agentName)
 
+            // Notify hooks of handoff to next agent
+            if let context {
+                await hooks?.onHandoff(context: context, fromAgent: self, toAgent: agent)
+            }
+
             // Run the agent
             let agentResult = try await agent.run(currentInput, hooks: hooks)
 

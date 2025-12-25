@@ -275,7 +275,7 @@ public struct LoggingRunHooks: RunHooks {
 
     public func onAgentStart(context: AgentContext?, agent: any Agent, input: String) async {
         let contextId = if let context = context {
-            " [context: \(await context.executionId)]"
+            " [context: \(context.executionId)]"
         } else {
             ""
         }
@@ -284,7 +284,7 @@ public struct LoggingRunHooks: RunHooks {
 
     public func onAgentEnd(context: AgentContext?, agent: any Agent, result: AgentResult) async {
         let contextId = if let context = context {
-            " [context: \(await context.executionId)]"
+            " [context: \(context.executionId)]"
         } else {
             ""
         }
@@ -293,7 +293,7 @@ public struct LoggingRunHooks: RunHooks {
 
     public func onError(context: AgentContext?, agent: any Agent, error: Error) async {
         let contextId = if let context = context {
-            " [context: \(await context.executionId)]"
+            " [context: \(context.executionId)]"
         } else {
             ""
         }
@@ -302,7 +302,7 @@ public struct LoggingRunHooks: RunHooks {
 
     public func onHandoff(context: AgentContext?, fromAgent: any Agent, toAgent: any Agent) async {
         let contextId = if let context = context {
-            " [context: \(await context.executionId)]"
+            " [context: \(context.executionId)]"
         } else {
             ""
         }
@@ -311,7 +311,7 @@ public struct LoggingRunHooks: RunHooks {
 
     public func onToolStart(context: AgentContext?, agent: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {
         let contextId = if let context = context {
-            " [context: \(await context.executionId)]"
+            " [context: \(context.executionId)]"
         } else {
             ""
         }
@@ -320,7 +320,7 @@ public struct LoggingRunHooks: RunHooks {
 
     public func onToolEnd(context: AgentContext?, agent: any Agent, tool: any Tool, result: SendableValue) async {
         let contextId = if let context = context {
-            " [context: \(await context.executionId)]"
+            " [context: \(context.executionId)]"
         } else {
             ""
         }
@@ -329,7 +329,7 @@ public struct LoggingRunHooks: RunHooks {
 
     public func onLLMStart(context: AgentContext?, agent: any Agent, systemPrompt: String?, inputMessages: [MemoryMessage]) async {
         let contextId = if let context = context {
-            " [context: \(await context.executionId)]"
+            " [context: \(context.executionId)]"
         } else {
             ""
         }
@@ -338,7 +338,7 @@ public struct LoggingRunHooks: RunHooks {
 
     public func onLLMEnd(context: AgentContext?, agent: any Agent, response: String, usage: InferenceResponse.TokenUsage?) async {
         let contextId = if let context = context {
-            " [context: \(await context.executionId)]"
+            " [context: \(context.executionId)]"
         } else {
             ""
         }
@@ -352,7 +352,7 @@ public struct LoggingRunHooks: RunHooks {
 
     public func onGuardrailTriggered(context: AgentContext?, guardrailName: String, guardrailType: GuardrailType, result: GuardrailResult) async {
         let contextId = if let context = context {
-            " [context: \(await context.executionId)]"
+            " [context: \(context.executionId)]"
         } else {
             ""
         }

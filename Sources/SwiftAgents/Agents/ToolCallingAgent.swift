@@ -243,7 +243,7 @@ public actor ToolCallingAgent: Agent {
                 }
 
                 // Notify hooks of LLM start
-                await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemMessage, inputMessages: [])
+                await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemMessage, inputMessages: [MemoryMessage.user(prompt)])
 
                 let content = try await provider.generate(
                     prompt: prompt,
@@ -387,7 +387,7 @@ public actor ToolCallingAgent: Agent {
         )
 
         // Notify hooks of LLM start
-        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [])
+        await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: systemPrompt, inputMessages: [MemoryMessage.user(prompt)])
 
         let response = try await provider.generateWithToolCalls(
             prompt: prompt,

@@ -554,6 +554,11 @@ public actor SupervisorAgent: Agent {
             guard let selectedEntry = agentRegistry.first(where: { $0.name == decision.selectedAgentName }) else {
                 // Agent not found, use fallback if available
                 if let fallback = fallbackAgent {
+                    // Notify hooks of handoff to fallback agent
+                    if let context {
+                        await hooks?.onHandoff(context: context, fromAgent: self, toAgent: fallback)
+                    }
+
                     let result = try await fallback.run(input, hooks: hooks)
                     builder.setOutput(result.output)
                     builder.setMetadata("routing_decision", .string("fallback"))
@@ -569,6 +574,11 @@ public actor SupervisorAgent: Agent {
             // Track execution in context
             if let context {
                 await context.recordExecution(agentName: decision.selectedAgentName)
+            }
+
+            // Notify hooks of handoff to selected agent
+            if let context {
+                await hooks?.onHandoff(context: context, fromAgent: self, toAgent: selectedEntry.agent)
             }
 
             // Execute the selected agent
@@ -600,6 +610,10 @@ public actor SupervisorAgent: Agent {
         } catch {
             // If routing fails and we have a fallback, use it
             if let fallback = fallbackAgent, error is AgentError {
+                // Notify hooks of handoff to fallback agent after error
+                let errorContext = AgentContext(input: input)
+                await hooks?.onHandoff(context: errorContext, fromAgent: self, toAgent: fallback)
+
                 let result = try await fallback.run(input, hooks: hooks)
                 builder.setOutput(result.output)
                 builder.setMetadata("routing_decision", .string("fallback_after_error"))

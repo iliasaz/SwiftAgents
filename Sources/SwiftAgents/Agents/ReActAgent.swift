@@ -217,7 +217,7 @@ public actor ReActAgent: Agent {
             )
 
             // Step 2: Generate response from model
-            await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [])
+            await hooks?.onLLMStart(context: nil, agent: self, systemPrompt: instructions, inputMessages: [MemoryMessage.user(prompt)])
             let response = try await generateResponse(prompt: prompt)
             await hooks?.onLLMEnd(context: nil, agent: self, response: response, usage: nil)
 

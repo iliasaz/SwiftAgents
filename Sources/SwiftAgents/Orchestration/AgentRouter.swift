@@ -428,6 +428,10 @@ public actor AgentRouter: Agent {
         guard let route = selectedRoute else {
             // No route matched - try fallback
             if let fallback = fallbackAgent {
+                // Notify hooks of handoff to fallback agent
+                let routingContext = AgentContext(input: input)
+                await hooks?.onHandoff(context: routingContext, fromAgent: self, toAgent: fallback)
+
                 return try await fallback.run(input, hooks: hooks)
             } else {
                 throw OrchestrationError.routingFailed(
@@ -435,6 +439,10 @@ public actor AgentRouter: Agent {
                 )
             }
         }
+
+        // Notify hooks of handoff to matched route's agent
+        let routingContext = AgentContext(input: input)
+        await hooks?.onHandoff(context: routingContext, fromAgent: self, toAgent: route.agent)
 
         // Execute the matched route's agent
         let result = try await route.agent.run(input, hooks: hooks)

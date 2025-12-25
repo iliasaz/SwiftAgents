@@ -317,11 +317,6 @@ public actor ToolRegistry {
             throw AgentError.toolNotFound(name: name)
         }
 
-        // Notify hooks of tool start
-        if let agent = agent {
-            await hooks?.onToolStart(context: context, agent: agent, tool: tool, arguments: arguments)
-        }
-
         // Create a single GuardrailRunner instance for both input and output guardrails
         let runner = GuardrailRunner()
         let data = ToolGuardrailData(tool: tool, arguments: arguments, agent: agent, context: context)
@@ -337,11 +332,6 @@ public actor ToolRegistry {
             // Run output guardrails
             if !tool.outputGuardrails.isEmpty {
                 _ = try await runner.runToolOutputGuardrails(tool.outputGuardrails, data: data, output: result)
-            }
-
-            // Notify hooks of tool end
-            if let agent = agent {
-                await hooks?.onToolEnd(context: context, agent: agent, tool: tool, result: result)
             }
 
             return result
