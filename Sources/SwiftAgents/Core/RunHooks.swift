@@ -158,10 +158,12 @@ public extension RunHooks {
 /// all receive callbacks. Hooks are executed **concurrently** using structured
 /// concurrency for optimal performance.
 ///
-/// - Important: Hooks are **invoked** in registration order but execute **concurrently**.
+/// - Important: Hooks are **scheduled** in registration order but execute **concurrently**.
 ///   Completion order is not guaranteed. For strictly ordered execution, use a single hook
 ///   that coordinates multiple handlers internally.
 /// - Note: Hook implementations must be thread-safe and handle concurrent invocation.
+///   Since `RunHooks` methods are not `throws`, implementations cannot propagate errors.
+///   Any internal errors should be logged rather than thrown.
 ///
 /// Example:
 /// ```swift
@@ -348,9 +350,17 @@ public struct LoggingRunHooks: RunHooks {
         } else {
             ""
         }
-        let fromName = fromAgent.configuration.name
-        let toName = toAgent.configuration.name
+        let fromName = agentDisplayName(fromAgent)
+        let toName = agentDisplayName(toAgent)
         Log.agents.info("Agent handoff\(contextId) - from: \(fromName) to: \(toName)")
+    }
+
+    // MARK: - Private Helpers
+
+    /// Returns a display name for an agent, falling back to type name if configuration name is empty.
+    private func agentDisplayName(_ agent: any Agent) -> String {
+        let name = agent.configuration.name
+        return name.isEmpty ? String(describing: type(of: agent)) : name
     }
 
     public func onToolStart(context: AgentContext?, agent: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {

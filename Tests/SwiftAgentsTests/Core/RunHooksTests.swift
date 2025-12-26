@@ -167,9 +167,9 @@ struct CompositeRunHooksTests {
         #expect(events3.contains("agentStart:test input"))
     }
     
-    @Test("CompositeRunHooks calls hooks in order")
-    func compositeCallsHooksInOrder() async {
-        // Given: A composite with ordered hooks
+    @Test("CompositeRunHooks calls all hooks concurrently")
+    func compositeCallsAllHooksConcurrently() async {
+        // Given: A composite with multiple hooks
         let recorder = RecordingHooks()
 
         struct FirstHook: RunHooks {
@@ -202,9 +202,12 @@ struct CompositeRunHooksTests {
         // When: Calling a hook method
         await composite.onAgentStart(context: nil, agent: MockAgentForRunHooks(), input: "test")
 
-        // Then: Hooks should be called in registration order
+        // Then: All hooks should be called (order not guaranteed due to concurrent execution)
         let events = await recorder.getEvents()
-        #expect(events == ["agentStart:first", "agentStart:second", "agentStart:third"])
+        #expect(events.count == 3)
+        #expect(events.contains("agentStart:first"))
+        #expect(events.contains("agentStart:second"))
+        #expect(events.contains("agentStart:third"))
     }
     
     @Test("CompositeRunHooks handles empty hook list")
