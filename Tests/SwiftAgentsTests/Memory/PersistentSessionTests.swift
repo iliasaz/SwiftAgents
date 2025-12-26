@@ -11,22 +11,7 @@
 
     @Suite("PersistentSession Tests")
     struct PersistentSessionTests {
-        // MARK: - Helpers
-
-        /// Creates a MemoryMessage with an explicit timestamp offset from a base date.
-        /// This ensures deterministic ordering when testing batch operations.
-        private func makeMessage(
-            _ content: String,
-            role: MemoryMessage.Role = .user,
-            offsetSeconds: Double,
-            baseDate: Date = Date()
-        ) -> MemoryMessage {
-            MemoryMessage(
-                role: role,
-                content: content,
-                timestamp: baseDate.addingTimeInterval(offsetSeconds)
-            )
-        }
+        // MARK: Internal
 
         // MARK: - Factory Method Tests
 
@@ -530,13 +515,13 @@
         @Test("Handles very long content")
         func handlesVeryLongContent() async throws {
             let session = try PersistentSession.inMemory(sessionId: "long-content-test")
-            let longContent = String(repeating: "a", count: 10_000)
+            let longContent = String(repeating: "a", count: 10000)
 
             try await session.addItem(MemoryMessage.user(longContent))
 
             let items = try await session.getAllItems()
             #expect(items[0].content == longContent)
-            #expect(items[0].content.count == 10_000)
+            #expect(items[0].content.count == 10000)
         }
 
         @Test("All message roles are supported")
@@ -610,6 +595,25 @@
             #expect(lastTen.count == 10)
             #expect(lastTen[0].content == "Message 41")
             #expect(lastTen[9].content == "Message 50")
+        }
+
+        // MARK: Private
+
+        // MARK: - Helpers
+
+        /// Creates a MemoryMessage with an explicit timestamp offset from a base date.
+        /// This ensures deterministic ordering when testing batch operations.
+        private func makeMessage(
+            _ content: String,
+            role: MemoryMessage.Role = .user,
+            offsetSeconds: Double,
+            baseDate: Date = Date()
+        ) -> MemoryMessage {
+            MemoryMessage(
+                role: role,
+                content: content,
+                timestamp: baseDate.addingTimeInterval(offsetSeconds)
+            )
         }
     }
 #endif

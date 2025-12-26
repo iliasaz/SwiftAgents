@@ -165,7 +165,7 @@ public actor ParallelComposition: Agent {
 
     // MARK: - Agent Protocol
 
-    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !parallelAgents.isEmpty else {
             throw AgentError.invalidInput(reason: "No agents configured in parallel composition")
         }
@@ -183,7 +183,7 @@ public actor ParallelComposition: Agent {
             for agent in parallelAgents {
                 group.addTask {
                     do {
-                        let result = try await agent.run(input, hooks: hooks)
+                        let result = try await agent.run(input, session: session, hooks: hooks)
                         return .success(result)
                     } catch {
                         return .failure(error)
@@ -244,11 +244,11 @@ public actor ParallelComposition: Agent {
         )
     }
 
-    nonisolated public func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { actor, continuation in
             continuation.yield(.started(input: input))
             do {
-                let result = try await actor.run(input, hooks: hooks)
+                let result = try await actor.run(input, session: session, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {
@@ -372,7 +372,7 @@ public actor AgentSequence: Agent {
 
     // MARK: - Agent Protocol
 
-    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         guard !sequentialAgents.isEmpty else {
             throw AgentError.invalidInput(reason: "No agents configured in sequential composition")
         }
@@ -393,7 +393,7 @@ public actor AgentSequence: Agent {
                 throw AgentError.cancelled
             }
 
-            let result = try await agent.run(currentInput, hooks: hooks)
+            let result = try await agent.run(currentInput, session: session, hooks: hooks)
             allToolCalls.append(contentsOf: result.toolCalls)
             allToolResults.append(contentsOf: result.toolResults)
             totalIterations += result.iterationCount
@@ -418,11 +418,11 @@ public actor AgentSequence: Agent {
         )
     }
 
-    nonisolated public func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { actor, continuation in
             continuation.yield(.started(input: input))
             do {
-                let result = try await actor.run(input, hooks: hooks)
+                let result = try await actor.run(input, session: session, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {
@@ -485,13 +485,13 @@ public actor ConditionalFallback: Agent {
 
     // MARK: - Agent Protocol
 
-    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         if isCancelled {
             throw AgentError.cancelled
         }
 
         do {
-            var result = try await primary.run(input, hooks: hooks)
+            var result = try await primary.run(input, session: session, hooks: hooks)
             result = AgentResult(
                 output: result.output,
                 toolCalls: result.toolCalls,
@@ -503,7 +503,7 @@ public actor ConditionalFallback: Agent {
             )
             return result
         } catch {
-            var result = try await fallback.run(input, hooks: hooks)
+            var result = try await fallback.run(input, session: session, hooks: hooks)
             result = AgentResult(
                 output: result.output,
                 toolCalls: result.toolCalls,
@@ -520,11 +520,11 @@ public actor ConditionalFallback: Agent {
         }
     }
 
-    nonisolated public func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         StreamHelper.makeTrackedStream(for: self) { actor, continuation in
             continuation.yield(.started(input: input))
             do {
-                let result = try await actor.run(input, hooks: hooks)
+                let result = try await actor.run(input, session: session, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch let error as AgentError {

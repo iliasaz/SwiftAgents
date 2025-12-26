@@ -7,6 +7,8 @@
 
 import Foundation
 
+// MARK: - RateLimiter
+
 /// Token bucket rate limiter for API calls
 ///
 /// Implements the token bucket algorithm for rate limiting:
@@ -28,25 +30,28 @@ import Foundation
 /// }
 /// ```
 public actor RateLimiter {
-    private let maxTokens: Int
-    private let refillRate: Double  // tokens per second
-    private var availableTokens: Double
-    private var lastRefillTime: ContinuousClock.Instant
+    // MARK: Public
+
+    /// Current available tokens
+    public var available: Int {
+        refill()
+        return Int(availableTokens)
+    }
 
     /// Create rate limiter with requests per minute
     public init(maxRequestsPerMinute: Int) {
-        self.maxTokens = maxRequestsPerMinute
-        self.refillRate = Double(maxRequestsPerMinute) / 60.0
-        self.availableTokens = Double(maxRequestsPerMinute)
-        self.lastRefillTime = .now
+        maxTokens = maxRequestsPerMinute
+        refillRate = Double(maxRequestsPerMinute) / 60.0
+        availableTokens = Double(maxRequestsPerMinute)
+        lastRefillTime = .now
     }
 
     /// Create rate limiter with custom token bucket parameters
     public init(maxTokens: Int, refillRatePerSecond: Double) {
         self.maxTokens = maxTokens
-        self.refillRate = refillRatePerSecond
-        self.availableTokens = Double(maxTokens)
-        self.lastRefillTime = .now
+        refillRate = refillRatePerSecond
+        availableTokens = Double(maxTokens)
+        lastRefillTime = .now
     }
 
     /// Acquire a token, waiting if necessary
@@ -74,17 +79,18 @@ public actor RateLimiter {
         return false
     }
 
-    /// Current available tokens
-    public var available: Int {
-        refill()
-        return Int(availableTokens)
-    }
-
     /// Reset the limiter to full capacity
     public func reset() {
         availableTokens = Double(maxTokens)
         lastRefillTime = .now
     }
+
+    // MARK: Private
+
+    private let maxTokens: Int
+    private let refillRate: Double // tokens per second
+    private var availableTokens: Double
+    private var lastRefillTime: ContinuousClock.Instant
 
     private func refill() {
         let now = ContinuousClock.now

@@ -53,7 +53,7 @@
     /// ```
     @available(macOS 14.0, iOS 17.0, watchOS 10.0, tvOS 17.0, *)
     public actor PersistentSession: Session {
-        // MARK: - Properties
+        // MARK: Public
 
         /// Unique identifier for this session.
         ///
@@ -61,8 +61,31 @@
         /// messages in the backend, ensuring data isolation between sessions.
         public let sessionId: String
 
-        /// The SwiftData backend used for persistence.
-        private let backend: SwiftDataBackend
+        // MARK: - Session Protocol Properties
+
+        /// Number of items currently stored in the session.
+        ///
+        /// This property queries the backend for the current message count
+        /// for this session's conversation ID.
+        public var itemCount: Int {
+            get async {
+                do {
+                    return try await backend.messageCount(conversationId: sessionId)
+                } catch {
+                    Log.memory.error("Failed to get item count: \(error.localizedDescription)")
+                    return 0
+                }
+            }
+        }
+
+        /// Whether the session contains no items.
+        ///
+        /// Returns `true` if `itemCount` is zero, `false` otherwise.
+        public var isEmpty: Bool {
+            get async {
+                await itemCount == 0
+            }
+        }
 
         // MARK: - Initialization
 
@@ -107,32 +130,6 @@
             return PersistentSession(sessionId: sessionId, backend: backend)
         }
 
-        // MARK: - Session Protocol Properties
-
-        /// Number of items currently stored in the session.
-        ///
-        /// This property queries the backend for the current message count
-        /// for this session's conversation ID.
-        public var itemCount: Int {
-            get async {
-                do {
-                    return try await backend.messageCount(conversationId: sessionId)
-                } catch {
-                    Log.memory.error("Failed to get item count: \(error.localizedDescription)")
-                    return 0
-                }
-            }
-        }
-
-        /// Whether the session contains no items.
-        ///
-        /// Returns `true` if `itemCount` is zero, `false` otherwise.
-        public var isEmpty: Bool {
-            get async {
-                await itemCount == 0
-            }
-        }
-
         // MARK: - Session Protocol Methods
 
         /// Retrieves conversation history from the session.
@@ -148,7 +145,7 @@
         /// - Returns: Array of messages in chronological order.
         /// - Throws: If retrieval fails due to underlying storage issues.
         public func getItems(limit: Int?) async throws -> [MemoryMessage] {
-            guard let limit = limit else {
+            guard let limit else {
                 // nil limit: return all messages
                 return try await backend.fetchMessages(conversationId: sessionId)
             }
@@ -214,5 +211,10 @@
         public func clearSession() async throws {
             try await backend.deleteMessages(conversationId: sessionId)
         }
+
+        // MARK: Private
+
+        /// The SwiftData backend used for persistence.
+        private let backend: SwiftDataBackend
     }
 #endif

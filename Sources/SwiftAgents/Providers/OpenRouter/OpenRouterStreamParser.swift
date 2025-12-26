@@ -45,27 +45,6 @@ public enum OpenRouterStreamEvent: Sendable, Equatable {
 ///
 /// This structure mirrors the OpenAI chat completion chunk format used by OpenRouter.
 public struct OpenRouterStreamChunk: Decodable, Sendable {
-    /// Unique identifier for the chunk.
-    public let id: String?
-
-    /// Object type (typically "chat.completion.chunk").
-    public let object: String?
-
-    /// Unix timestamp of creation.
-    public let created: Int?
-
-    /// Model used for generation.
-    public let model: String?
-
-    /// Array of choices containing the actual content.
-    public let choices: [StreamChoice]?
-
-    /// Token usage information (usually only in final chunk).
-    public let usage: StreamUsage?
-
-    /// Error information if the chunk represents an error.
-    public let error: StreamError?
-
     // MARK: - StreamChoice
 
     /// A single choice in the streaming response.
@@ -157,9 +136,6 @@ public struct OpenRouterStreamChunk: Decodable, Sendable {
 
     /// Log probability information.
     public struct LogProbs: Decodable, Sendable {
-        /// Content log probabilities.
-        public let content: [TokenLogProb]?
-
         /// Token log probability detail.
         public struct TokenLogProb: Decodable, Sendable {
             /// The token.
@@ -171,6 +147,9 @@ public struct OpenRouterStreamChunk: Decodable, Sendable {
             /// Byte representation.
             public let bytes: [Int]?
         }
+
+        /// Content log probabilities.
+        public let content: [TokenLogProb]?
     }
 
     // MARK: - StreamError
@@ -186,6 +165,27 @@ public struct OpenRouterStreamChunk: Decodable, Sendable {
         /// Error code.
         public let code: String?
     }
+
+    /// Unique identifier for the chunk.
+    public let id: String?
+
+    /// Object type (typically "chat.completion.chunk").
+    public let object: String?
+
+    /// Unix timestamp of creation.
+    public let created: Int?
+
+    /// Model used for generation.
+    public let model: String?
+
+    /// Array of choices containing the actual content.
+    public let choices: [StreamChoice]?
+
+    /// Token usage information (usually only in final chunk).
+    public let usage: StreamUsage?
+
+    /// Error information if the chunk represents an error.
+    public let error: StreamError?
 }
 
 // MARK: - OpenRouterStreamParser
@@ -217,6 +217,7 @@ public struct OpenRouterStreamChunk: Decodable, Sendable {
 /// }
 /// ```
 public struct OpenRouterStreamParser: Sendable {
+    // MARK: Public
 
     /// Creates a new stream parser.
     public init() {}
@@ -251,11 +252,10 @@ public struct OpenRouterStreamParser: Sendable {
         }
 
         // Extract the data payload
-        let dataPayload: String
-        if trimmedLine.hasPrefix("data: ") {
-            dataPayload = String(trimmedLine.dropFirst(6))
+        let dataPayload = if trimmedLine.hasPrefix("data: ") {
+            String(trimmedLine.dropFirst(6))
         } else {
-            dataPayload = String(trimmedLine.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+            String(trimmedLine.dropFirst(5)).trimmingCharacters(in: .whitespaces)
         }
         let data = dataPayload
 
@@ -281,6 +281,8 @@ public struct OpenRouterStreamParser: Sendable {
             return [.error(.decodingError(SendableErrorWrapper(description: "JSON decode failed: \(errorType)")))]
         }
     }
+
+    // MARK: Private
 
     /// Extracts events from a parsed stream chunk.
     ///
@@ -399,6 +401,7 @@ public struct OpenRouterStreamParser: Sendable {
 /// }
 /// ```
 public struct OpenRouterToolCallAccumulator {
+    // MARK: Public
 
     /// Represents a completed tool call.
     public struct CompletedToolCall: Sendable, Equatable {
@@ -419,25 +422,19 @@ public struct OpenRouterToolCallAccumulator {
         }
     }
 
-    /// Internal storage for accumulating tool calls by index.
-    private struct AccumulatingToolCall: Sendable {
-        var id: String?
-        var name: String?
-        var arguments: String
-
-        init() {
-            self.id = nil
-            self.name = nil
-            self.arguments = ""
-        }
+    /// Checks if there are any tool calls being accumulated.
+    public var hasToolCalls: Bool {
+        !toolCalls.isEmpty
     }
 
-    /// Tool calls being accumulated, keyed by index.
-    private var toolCalls: [Int: AccumulatingToolCall]
+    /// Returns the number of tool calls being accumulated.
+    public var count: Int {
+        toolCalls.count
+    }
 
     /// Creates a new tool call accumulator.
     public init() {
-        self.toolCalls = [:]
+        toolCalls = [:]
     }
 
     /// Accumulates a tool call delta.
@@ -456,12 +453,12 @@ public struct OpenRouterToolCallAccumulator {
         var toolCall = toolCalls[index] ?? AccumulatingToolCall()
 
         // Set ID if provided (usually in first delta)
-        if let id = id, !id.isEmpty {
+        if let id, !id.isEmpty {
             toolCall.id = id
         }
 
         // Set name if provided (usually in first delta)
-        if let name = name, !name.isEmpty {
+        if let name, !name.isEmpty {
             toolCall.name = name
         }
 
@@ -480,7 +477,7 @@ public struct OpenRouterToolCallAccumulator {
     public func getCompletedToolCalls() -> [CompletedToolCall] {
         toolCalls
             .sorted { $0.key < $1.key }
-            .compactMap { index, call -> CompletedToolCall? in
+            .compactMap { _, call -> CompletedToolCall? in
                 // Incomplete tool calls (missing ID or name) are filtered out
                 if call.id == nil {
                     return nil
@@ -520,16 +517,6 @@ public struct OpenRouterToolCallAccumulator {
             }
     }
 
-    /// Checks if there are any tool calls being accumulated.
-    public var hasToolCalls: Bool {
-        !toolCalls.isEmpty
-    }
-
-    /// Returns the number of tool calls being accumulated.
-    public var count: Int {
-        toolCalls.count
-    }
-
     /// Resets the accumulator, clearing all accumulated tool calls.
     public mutating func reset() {
         toolCalls.removeAll()
@@ -547,4 +534,22 @@ public struct OpenRouterToolCallAccumulator {
         }
         return CompletedToolCall(id: id, name: name, arguments: call.arguments)
     }
+
+    // MARK: Private
+
+    /// Internal storage for accumulating tool calls by index.
+    private struct AccumulatingToolCall: Sendable {
+        var id: String?
+        var name: String?
+        var arguments: String
+
+        init() {
+            id = nil
+            name = nil
+            arguments = ""
+        }
+    }
+
+    /// Tool calls being accumulated, keyed by index.
+    private var toolCalls: [Int: AccumulatingToolCall]
 }

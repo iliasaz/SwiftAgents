@@ -109,13 +109,10 @@ public protocol OutputGuardrail: Sendable {
 /// }
 /// ```
 public struct ClosureOutputGuardrail: OutputGuardrail, Sendable {
-    // MARK: - Properties
+    // MARK: Public
 
     /// The name of this guardrail.
     public let name: String
-
-    /// The validation handler closure.
-    private let handler: @Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult
 
     // MARK: - Initialization
 
@@ -155,6 +152,11 @@ public struct ClosureOutputGuardrail: OutputGuardrail, Sendable {
     public func validate(_ output: String, agent: any Agent, context: AgentContext?) async throws -> GuardrailResult {
         try await handler(output, agent, context)
     }
+
+    // MARK: Private
+
+    /// The validation handler closure.
+    private let handler: @Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult
 }
 
 // MARK: - OutputGuardrailBuilder
@@ -182,13 +184,7 @@ public struct ClosureOutputGuardrail: OutputGuardrail, Sendable {
 /// - Multiple calls to `.validate()` - the last handler wins
 /// - Fluent chaining for readability
 public struct OutputGuardrailBuilder: Sendable {
-    // MARK: - Private Properties
-
-    /// The current name being built.
-    private let currentName: String?
-
-    /// The current validation handler being built.
-    private let currentHandler: (@Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult)?
+    // MARK: Public
 
     // MARK: - Initialization
 
@@ -201,15 +197,6 @@ public struct OutputGuardrailBuilder: Sendable {
     public init() {
         currentName = nil
         currentHandler = nil
-    }
-
-    /// Private initializer for builder chaining.
-    private init(
-        name: String?,
-        handler: (@Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult)?
-    ) {
-        currentName = name
-        currentHandler = handler
     }
 
     // MARK: - Builder Methods
@@ -275,6 +262,25 @@ public struct OutputGuardrailBuilder: Sendable {
         let finalHandler = currentHandler ?? { _, _, _ in .passed() }
 
         return ClosureOutputGuardrail(name: finalName, handler: finalHandler)
+    }
+
+    // MARK: Private
+
+    // MARK: - Private Properties
+
+    /// The current name being built.
+    private let currentName: String?
+
+    /// The current validation handler being built.
+    private let currentHandler: (@Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult)?
+
+    /// Private initializer for builder chaining.
+    private init(
+        name: String?,
+        handler: (@Sendable (String, any Agent, AgentContext?) async throws -> GuardrailResult)?
+    ) {
+        currentName = name
+        currentHandler = handler
     }
 }
 

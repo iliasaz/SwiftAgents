@@ -70,6 +70,81 @@ public extension AsyncThrowingStream where Element == AgentEvent, Failure == Err
         }
     }
 
+    // MARK: - Retry
+
+    /// Retries stream creation on failure with optional delay between attempts.
+    ///
+    /// This operator accepts a factory closure that creates fresh streams for each retry attempt.
+    /// When a stream throws an error, the factory is called again to create a new stream,
+    /// up to the specified maximum attempts.
+    ///
+    /// - Parameters:
+    ///   - maxAttempts: Maximum number of attempts (including the initial attempt). Default: 3
+    ///   - delay: Duration to wait between retry attempts. Default: zero
+    ///   - factory: Closure that creates a new stream for each attempt
+    /// - Returns: A stream from the first successful attempt.
+    ///
+    /// Example:
+    /// ```swift
+    /// // Retry agent execution up to 3 times with 1 second delay
+    /// let stream = AsyncThrowingStream<AgentEvent, Error>.retry(
+    ///     maxAttempts: 3,
+    ///     delay: .seconds(1)
+    /// ) {
+    ///     await agent.stream(input: "query")
+    /// }
+    ///
+    /// for try await event in stream {
+    ///     print(event)
+    /// }
+    /// ```
+    ///
+    /// - Note: The factory closure is called once per attempt, allowing proper stream recreation.
+    ///   For simple retry logic, consider using `ResilientAgent` instead.
+    static func retry(
+        maxAttempts: Int = 3,
+        delay: Duration = .zero,
+        factory: @escaping @Sendable () async -> AsyncThrowingStream<AgentEvent, Error>
+    ) -> AsyncThrowingStream<AgentEvent, Error> {
+        let (stream, continuation): (AsyncThrowingStream<AgentEvent, Error>, AsyncThrowingStream<AgentEvent, Error>.Continuation) = StreamHelper.makeStream()
+
+        let task = Task { @Sendable in
+            var attempts = 0
+            var lastError: Error?
+
+            while attempts < maxAttempts {
+                attempts += 1
+                do {
+                    let newStream = await factory()
+                    for try await event in newStream {
+                        continuation.yield(event)
+                    }
+                    // Stream completed successfully
+                    continuation.finish()
+                    return
+                } catch {
+                    lastError = error
+                    if attempts < maxAttempts, delay != .zero {
+                        try? await Task.sleep(for: delay)
+                    }
+                }
+            }
+
+            // All attempts exhausted
+            if let error = lastError {
+                continuation.finish(throwing: error)
+            } else {
+                continuation.finish()
+            }
+        }
+
+        continuation.onTermination = { @Sendable (_: AsyncThrowingStream<AgentEvent, Error>.Continuation.Termination) in
+            task.cancel()
+        }
+
+        return stream
+    }
+
     // MARK: - Filtering
 
     /// Filters the stream to only include thinking events.
@@ -537,81 +612,6 @@ public extension AsyncThrowingStream where Element == AgentEvent, Failure == Err
         }
     }
 
-    // MARK: - Retry
-
-    /// Retries stream creation on failure with optional delay between attempts.
-    ///
-    /// This operator accepts a factory closure that creates fresh streams for each retry attempt.
-    /// When a stream throws an error, the factory is called again to create a new stream,
-    /// up to the specified maximum attempts.
-    ///
-    /// - Parameters:
-    ///   - maxAttempts: Maximum number of attempts (including the initial attempt). Default: 3
-    ///   - delay: Duration to wait between retry attempts. Default: zero
-    ///   - factory: Closure that creates a new stream for each attempt
-    /// - Returns: A stream from the first successful attempt.
-    ///
-    /// Example:
-    /// ```swift
-    /// // Retry agent execution up to 3 times with 1 second delay
-    /// let stream = AsyncThrowingStream<AgentEvent, Error>.retry(
-    ///     maxAttempts: 3,
-    ///     delay: .seconds(1)
-    /// ) {
-    ///     await agent.stream(input: "query")
-    /// }
-    ///
-    /// for try await event in stream {
-    ///     print(event)
-    /// }
-    /// ```
-    ///
-    /// - Note: The factory closure is called once per attempt, allowing proper stream recreation.
-    ///   For simple retry logic, consider using `ResilientAgent` instead.
-    static func retry(
-        maxAttempts: Int = 3,
-        delay: Duration = .zero,
-        factory: @escaping @Sendable () async -> AsyncThrowingStream<AgentEvent, Error>
-    ) -> AsyncThrowingStream<AgentEvent, Error> {
-        let (stream, continuation): (AsyncThrowingStream<AgentEvent, Error>, AsyncThrowingStream<AgentEvent, Error>.Continuation) = StreamHelper.makeStream()
-
-        let task = Task { @Sendable in
-            var attempts = 0
-            var lastError: Error?
-
-            while attempts < maxAttempts {
-                attempts += 1
-                do {
-                    let newStream = await factory()
-                    for try await event in newStream {
-                        continuation.yield(event)
-                    }
-                    // Stream completed successfully
-                    continuation.finish()
-                    return
-                } catch {
-                    lastError = error
-                    if attempts < maxAttempts, delay != .zero {
-                        try? await Task.sleep(for: delay)
-                    }
-                }
-            }
-
-            // All attempts exhausted
-            if let error = lastError {
-                continuation.finish(throwing: error)
-            } else {
-                continuation.finish()
-            }
-        }
-
-        continuation.onTermination = { @Sendable (_: AsyncThrowingStream<AgentEvent, Error>.Continuation.Termination) in
-            task.cancel()
-        }
-
-        return stream
-    }
-
     // MARK: - Throttle
 
     /// Limits the emission rate to one event per time interval.
@@ -830,30 +830,7 @@ public enum MergeErrorStrategy: Sendable {
 
 /// Namespace for stream utility functions.
 public enum AgentEventStream {
-    /// Actor that serializes concurrent yield/finish calls to prevent race conditions
-    private actor MergeCoordinator {
-        private var hasFinished = false
-        private let continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation
-
-        init(continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation) {
-            self.continuation = continuation
-        }
-
-        func yield(_ event: AgentEvent) {
-            guard !hasFinished else { return }
-            continuation.yield(event)
-        }
-
-        func finish(throwing error: Error? = nil) {
-            guard !hasFinished else { return }
-            hasFinished = true
-            if let error {
-                continuation.finish(throwing: error)
-            } else {
-                continuation.finish()
-            }
-        }
-    }
+    // MARK: Public
 
     /// Merges multiple agent event streams into one.
     ///
@@ -967,5 +944,36 @@ public enum AgentEventStream {
         AsyncThrowingStream { continuation in
             continuation.finish(throwing: error)
         }
+    }
+
+    // MARK: Private
+
+    /// Actor that serializes concurrent yield/finish calls to prevent race conditions
+    private actor MergeCoordinator {
+        // MARK: Internal
+
+        init(continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation) {
+            self.continuation = continuation
+        }
+
+        func yield(_ event: AgentEvent) {
+            guard !hasFinished else { return }
+            continuation.yield(event)
+        }
+
+        func finish(throwing error: Error? = nil) {
+            guard !hasFinished else { return }
+            hasFinished = true
+            if let error {
+                continuation.finish(throwing: error)
+            } else {
+                continuation.finish()
+            }
+        }
+
+        // MARK: Private
+
+        private var hasFinished = false
+        private let continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation
     }
 }

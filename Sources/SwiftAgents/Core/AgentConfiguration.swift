@@ -111,7 +111,6 @@ public struct AgentConfiguration: Sendable, Equatable {
         self.stopOnToolError = stopOnToolError
         self.includeReasoning = includeReasoning
     }
-
 }
 
 // MARK: CustomStringConvertible

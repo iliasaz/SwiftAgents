@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - Task-Local Storage
+// MARK: - TraceContextStorage
 
 /// Internal storage for task-local trace context.
 private enum TraceContextStorage {
@@ -31,7 +31,20 @@ private enum TraceContextStorage {
 /// }
 /// ```
 public actor TraceContext: Sendable {
-    // MARK: - Properties
+    // MARK: Public
+
+    // MARK: - Static Task-Local Access
+
+    /// The current trace context for this task, if any.
+    ///
+    /// Returns the `TraceContext` established by the nearest enclosing `withTrace` call,
+    /// or `nil` if no trace context is active.
+    ///
+    /// This property uses `@TaskLocal` storage, so the context automatically propagates
+    /// through async calls and child tasks.
+    public static var current: TraceContext? {
+        TraceContextStorage.current
+    }
 
     /// Human-readable name for this trace.
     public let name: String
@@ -50,41 +63,11 @@ public actor TraceContext: Sendable {
     /// Timestamp when this trace started.
     public let startTime: Date
 
-    /// Collection of spans recorded within this trace context.
-    private var spans: [TraceSpan] = []
-
-    /// Current active span for parent tracking.
-    private var currentSpanId: UUID?
-
-    // MARK: - Initialization
-
-    /// Creates a new trace context.
+    /// The total duration of this trace from start until now.
     ///
-    /// Note: This initializer is private. Use `withTrace` to create contexts.
-    private init(
-        name: String,
-        traceId: UUID = UUID(),
-        groupId: String? = nil,
-        metadata: [String: SendableValue] = [:]
-    ) {
-        self.name = name
-        self.traceId = traceId
-        self.groupId = groupId
-        self.metadata = metadata
-        startTime = Date()
-    }
-
-    // MARK: - Static Task-Local Access
-
-    /// The current trace context for this task, if any.
-    ///
-    /// Returns the `TraceContext` established by the nearest enclosing `withTrace` call,
-    /// or `nil` if no trace context is active.
-    ///
-    /// This property uses `@TaskLocal` storage, so the context automatically propagates
-    /// through async calls and child tasks.
-    public static var current: TraceContext? {
-        TraceContextStorage.current
+    /// Calculated as the time interval from `startTime` to the current time.
+    public var duration: TimeInterval {
+        Date().timeIntervalSince(startTime)
     }
 
     /// Executes an operation within a new trace context.
@@ -198,17 +181,34 @@ public actor TraceContext: Sendable {
         spans
     }
 
-    // MARK: - Computed Properties
+    // MARK: Private
 
-    /// The total duration of this trace from start until now.
+    /// Collection of spans recorded within this trace context.
+    private var spans: [TraceSpan] = []
+
+    /// Current active span for parent tracking.
+    private var currentSpanId: UUID?
+
+    // MARK: - Initialization
+
+    /// Creates a new trace context.
     ///
-    /// Calculated as the time interval from `startTime` to the current time.
-    public var duration: TimeInterval {
-        Date().timeIntervalSince(startTime)
+    /// Note: This initializer is private. Use `withTrace` to create contexts.
+    private init(
+        name: String,
+        traceId: UUID = UUID(),
+        groupId: String? = nil,
+        metadata: [String: SendableValue] = [:]
+    ) {
+        self.name = name
+        self.traceId = traceId
+        self.groupId = groupId
+        self.metadata = metadata
+        startTime = Date()
     }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension TraceContext: CustomStringConvertible {
     nonisolated public var description: String {

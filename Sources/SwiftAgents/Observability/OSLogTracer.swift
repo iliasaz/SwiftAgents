@@ -295,9 +295,9 @@
             /// - Parameter subsystem: The subsystem identifier (e.g., "com.example.app").
             public init(subsystem: String) {
                 self.subsystem = subsystem
-                self.category = "agent"
-                self.minimumLevel = .debug
-                self.emitSignposts = true
+                category = "agent"
+                minimumLevel = .debug
+                emitSignposts = true
             }
 
             /// Sets the category within the subsystem.

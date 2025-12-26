@@ -337,7 +337,7 @@ public actor ToolRegistry {
             return result
         } catch {
             // Notify hooks for any error (guardrail, execution, or otherwise)
-            if let agent = agent, let hooks = hooks {
+            if let agent, let hooks {
                 let notificationError = (error as? AgentError) ?? AgentError.toolExecutionFailed(
                     toolName: name,
                     underlyingError: error.localizedDescription

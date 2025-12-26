@@ -295,7 +295,7 @@ actor ParallelComposition: Agent {
         self.errorHandling = errorHandling
     }
 
-    func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    func run(_ input: String, session _: (any Session)? = nil, hooks _: (any RunHooks)? = nil) async throws -> AgentResult {
         // Run all agents in parallel and collect results
         await withTaskGroup(of: Result<AgentResult, Error>.self) { group in
             for agent in agents {
@@ -338,7 +338,7 @@ actor ParallelComposition: Agent {
         }
     }
 
-    nonisolated func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
         Task { @Sendable [weak self] in
             guard let self else {
@@ -346,7 +346,7 @@ actor ParallelComposition: Agent {
                 return
             }
             do {
-                let result = try await run(input, hooks: hooks)
+                let result = try await run(input, session: session, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch {
@@ -437,12 +437,12 @@ actor SequentialComposition: Agent {
         self.agents = agents
     }
 
-    func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         var currentInput = input
         var lastResult: AgentResult?
 
         for agent in agents {
-            let result = try await agent.run(currentInput, hooks: hooks)
+            let result = try await agent.run(currentInput, session: session, hooks: hooks)
             currentInput = result.output
             lastResult = result
         }
@@ -450,7 +450,7 @@ actor SequentialComposition: Agent {
         return lastResult ?? AgentResult(output: "", toolCalls: [], toolResults: [], iterationCount: 0, duration: .zero, tokenUsage: nil, metadata: [:])
     }
 
-    nonisolated func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
         Task { @Sendable [weak self] in
             guard let self else {
@@ -458,7 +458,7 @@ actor SequentialComposition: Agent {
                 return
             }
             do {
-                let result = try await run(input, hooks: hooks)
+                let result = try await run(input, session: session, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch {
@@ -497,15 +497,15 @@ actor ConditionalRouter: Agent {
         self.fallback = fallback
     }
 
-    func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
         do {
-            return try await primary.run(input, hooks: hooks)
+            return try await primary.run(input, session: session, hooks: hooks)
         } catch {
-            return try await fallback.run(input, hooks: hooks)
+            return try await fallback.run(input, session: session, hooks: hooks)
         }
     }
 
-    nonisolated func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
         Task { @Sendable [weak self] in
             guard let self else {
@@ -513,7 +513,7 @@ actor ConditionalRouter: Agent {
                 return
             }
             do {
-                let result = try await run(input, hooks: hooks)
+                let result = try await run(input, session: session, hooks: hooks)
                 continuation.yield(.completed(result: result))
                 continuation.finish()
             } catch {
@@ -562,11 +562,11 @@ struct EmptyAgent: Agent {
     var memory: (any Memory)? { nil }
     var inferenceProvider: (any InferenceProvider)? { nil }
 
-    func run(_: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    func run(_: String, session _: (any Session)? = nil, hooks _: (any RunHooks)? = nil) async throws -> AgentResult {
         AgentResult(output: "", toolCalls: [], toolResults: [], iterationCount: 0, duration: .zero, tokenUsage: nil, metadata: [:])
     }
 
-    nonisolated func stream(_: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated func stream(_: String, session _: (any Session)? = nil, hooks _: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             continuation.finish()
         }

@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - OpenRouter Tool Definitions
+// MARK: - OpenRouterToolDefinition
 
 /// OpenRouter tool definition with function type.
 ///
@@ -26,10 +26,12 @@ public struct OpenRouterToolDefinition: Sendable, Codable, Equatable {
     /// Creates an OpenRouter tool definition.
     /// - Parameter function: The function definition.
     public init(function: OpenRouterFunctionDefinition) {
-        self.type = "function"
+        type = "function"
         self.function = function
     }
 }
+
+// MARK: - OpenRouterFunctionDefinition
 
 /// OpenRouter function definition within a tool.
 ///
@@ -63,6 +65,8 @@ public struct OpenRouterFunctionDefinition: Sendable, Codable, Equatable {
     }
 }
 
+// MARK: - OpenRouterJSONSchema
+
 /// JSON Schema representation for OpenRouter tool parameters.
 ///
 /// Represents a JSON Schema object with type "object":
@@ -88,11 +92,13 @@ public struct OpenRouterJSONSchema: Sendable, Codable, Equatable {
     ///   - properties: The property schemas keyed by name.
     ///   - required: The names of required properties.
     public init(properties: [String: OpenRouterPropertySchema], required: [String]) {
-        self.type = "object"
+        type = "object"
         self.properties = properties
         self.required = required
     }
 }
+
+// MARK: - OpenRouterPropertySchema
 
 /// Property schema for OpenRouter tool parameters.
 ///
@@ -102,41 +108,8 @@ public struct OpenRouterJSONSchema: Sendable, Codable, Equatable {
 /// { "type": "array", "items": { ... }, "description": "..." }
 /// { "type": "object", "properties": { ... }, "required": [...], "description": "..." }
 /// ```
-public indirect enum OpenRouterPropertySchema: Sendable, Codable, Equatable {
-    /// A string property.
-    case string(description: String)
-
-    /// An integer property.
-    case integer(description: String)
-
-    /// A number (double) property.
-    case number(description: String)
-
-    /// A boolean property.
-    case boolean(description: String)
-
-    /// An array property with element schema.
-    case array(items: OpenRouterPropertySchema, description: String)
-
-    /// An object property with nested properties.
-    case object(properties: [String: OpenRouterPropertySchema], required: [String], description: String)
-
-    /// An enum property with allowed values.
-    case enumeration(values: [String], description: String)
-
-    /// Any type (no type constraint).
-    case any(description: String)
-
-    // MARK: - Codable Implementation
-
-    private enum CodingKeys: String, CodingKey {
-        case type
-        case description
-        case items
-        case properties
-        case required
-        case `enum`
-    }
+indirect public enum OpenRouterPropertySchema: Sendable, Codable, Equatable {
+    // MARK: Public
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -168,47 +141,6 @@ public indirect enum OpenRouterPropertySchema: Sendable, Codable, Equatable {
         }
     }
 
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-
-        switch self {
-        case .string(let description):
-            try container.encode("string", forKey: .type)
-            try container.encode(description, forKey: .description)
-
-        case .integer(let description):
-            try container.encode("integer", forKey: .type)
-            try container.encode(description, forKey: .description)
-
-        case .number(let description):
-            try container.encode("number", forKey: .type)
-            try container.encode(description, forKey: .description)
-
-        case .boolean(let description):
-            try container.encode("boolean", forKey: .type)
-            try container.encode(description, forKey: .description)
-
-        case .array(let items, let description):
-            try container.encode("array", forKey: .type)
-            try container.encode(items, forKey: .items)
-            try container.encode(description, forKey: .description)
-
-        case .object(let properties, let required, let description):
-            try container.encode("object", forKey: .type)
-            try container.encode(properties, forKey: .properties)
-            try container.encode(required, forKey: .required)
-            try container.encode(description, forKey: .description)
-
-        case .enumeration(let values, let description):
-            try container.encode("string", forKey: .type)
-            try container.encode(values, forKey: .enum)
-            try container.encode(description, forKey: .description)
-
-        case .any(let description):
-            try container.encode(description, forKey: .description)
-        }
-    }
-
     // MARK: - Conversion from ToolParameter.ParameterType
 
     /// Creates a property schema from a ToolParameter.ParameterType.
@@ -230,11 +162,11 @@ public indirect enum OpenRouterPropertySchema: Sendable, Codable, Equatable {
         case .bool:
             return .boolean(description: description)
 
-        case .array(let elementType):
+        case let .array(elementType):
             let itemSchema = from(elementType, description: "")
             return .array(items: itemSchema, description: description)
 
-        case .object(let properties):
+        case let .object(properties):
             var propertySchemas: [String: OpenRouterPropertySchema] = [:]
             var required: [String] = []
 
@@ -247,12 +179,90 @@ public indirect enum OpenRouterPropertySchema: Sendable, Codable, Equatable {
 
             return .object(properties: propertySchemas, required: required, description: description)
 
-        case .oneOf(let options):
+        case let .oneOf(options):
             return .enumeration(values: options, description: description)
 
         case .any:
             return .any(description: description)
         }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        switch self {
+        case let .string(description):
+            try container.encode("string", forKey: .type)
+            try container.encode(description, forKey: .description)
+
+        case let .integer(description):
+            try container.encode("integer", forKey: .type)
+            try container.encode(description, forKey: .description)
+
+        case let .number(description):
+            try container.encode("number", forKey: .type)
+            try container.encode(description, forKey: .description)
+
+        case let .boolean(description):
+            try container.encode("boolean", forKey: .type)
+            try container.encode(description, forKey: .description)
+
+        case let .array(items, description):
+            try container.encode("array", forKey: .type)
+            try container.encode(items, forKey: .items)
+            try container.encode(description, forKey: .description)
+
+        case let .object(properties, required, description):
+            try container.encode("object", forKey: .type)
+            try container.encode(properties, forKey: .properties)
+            try container.encode(required, forKey: .required)
+            try container.encode(description, forKey: .description)
+
+        case let .enumeration(values, description):
+            try container.encode("string", forKey: .type)
+            try container.encode(values, forKey: .enum)
+            try container.encode(description, forKey: .description)
+
+        case let .any(description):
+            try container.encode(description, forKey: .description)
+        }
+    }
+
+    /// A string property.
+    case string(description: String)
+
+    /// An integer property.
+    case integer(description: String)
+
+    /// A number (double) property.
+    case number(description: String)
+
+    /// A boolean property.
+    case boolean(description: String)
+
+    /// An array property with element schema.
+    case array(items: OpenRouterPropertySchema, description: String)
+
+    /// An object property with nested properties.
+    case object(properties: [String: OpenRouterPropertySchema], required: [String], description: String)
+
+    /// An enum property with allowed values.
+    case enumeration(values: [String], description: String)
+
+    /// Any type (no type constraint).
+    case any(description: String)
+
+    // MARK: Private
+
+    // MARK: - Codable Implementation
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case description
+        case items
+        case properties
+        case required
+        case `enum`
     }
 }
 
@@ -357,7 +367,7 @@ public extension SendableValue {
         case let double as Double:
             // Check if it's actually an integer stored as double
             // Use JavaScript safe integer range to prevent overflow
-            if double >= -9007199254740992 && double <= 9007199254740992 {
+            if double >= -9_007_199_254_740_992, double <= 9_007_199_254_740_992 {
                 if double.truncatingRemainder(dividingBy: 1) == 0 {
                     return .int(Int(double))
                 }
@@ -386,9 +396,9 @@ public extension SendableValue {
 
 // MARK: - OpenRouterToolDefinition to OpenRouterTool Conversion
 
-extension OpenRouterToolDefinition {
+public extension OpenRouterToolDefinition {
     /// Converts this tool definition to the simpler OpenRouterTool type for API requests.
-    public func toOpenRouterTool() -> OpenRouterTool {
+    func toOpenRouterTool() -> OpenRouterTool {
         // Convert OpenRouterJSONSchema to SendableValue
         let paramsValue = function.parameters.toSendableValue()
         return OpenRouterTool.function(
@@ -428,23 +438,23 @@ extension OpenRouterPropertySchema {
         var dict: [String: SendableValue] = [:]
 
         switch self {
-        case .string(let desc):
+        case let .string(desc):
             dict["type"] = .string("string")
             if !desc.isEmpty { dict["description"] = .string(desc) }
-        case .integer(let desc):
+        case let .integer(desc):
             dict["type"] = .string("integer")
             if !desc.isEmpty { dict["description"] = .string(desc) }
-        case .number(let desc):
+        case let .number(desc):
             dict["type"] = .string("number")
             if !desc.isEmpty { dict["description"] = .string(desc) }
-        case .boolean(let desc):
+        case let .boolean(desc):
             dict["type"] = .string("boolean")
             if !desc.isEmpty { dict["description"] = .string(desc) }
-        case .array(let items, let desc):
+        case let .array(items, desc):
             dict["type"] = .string("array")
             dict["items"] = items.toSendableValue()
             if !desc.isEmpty { dict["description"] = .string(desc) }
-        case .object(let props, let req, let desc):
+        case let .object(props, req, desc):
             dict["type"] = .string("object")
             var propsDict: [String: SendableValue] = [:]
             for (name, prop) in props {
@@ -455,11 +465,11 @@ extension OpenRouterPropertySchema {
                 dict["required"] = .array(req.map { .string($0) })
             }
             if !desc.isEmpty { dict["description"] = .string(desc) }
-        case .enumeration(let values, let desc):
+        case let .enumeration(values, desc):
             dict["type"] = .string("string")
             dict["enum"] = .array(values.map { .string($0) })
             if !desc.isEmpty { dict["description"] = .string(desc) }
-        case .any(let desc):
+        case let .any(desc):
             dict["type"] = .string("object")
             if !desc.isEmpty { dict["description"] = .string(desc) }
         }
@@ -470,7 +480,7 @@ extension OpenRouterPropertySchema {
 
 // MARK: - Tool Array Extension
 
-public extension Array where Element == any Tool {
+public extension [any Tool] {
     /// Converts an array of tools to OpenRouter tool definitions.
     /// - Returns: The array of OpenRouter tool definitions.
     func toOpenRouterTools() -> [OpenRouterToolDefinition] {
@@ -499,7 +509,7 @@ public extension Array where Element == any Tool {
 
 // MARK: - ToolDefinition Array Extension
 
-public extension Array where Element == ToolDefinition {
+public extension [ToolDefinition] {
     /// Converts an array of tool definitions to OpenRouter tool definitions.
     /// - Returns: The array of OpenRouter tool definitions.
     func toOpenRouterToolDefinitions() -> [OpenRouterToolDefinition] {

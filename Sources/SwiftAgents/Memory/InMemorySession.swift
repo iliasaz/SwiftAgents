@@ -38,23 +38,10 @@ import Foundation
 /// let recent = try await session.getItems(limit: 10)
 /// ```
 public actor InMemorySession: Session {
-    // MARK: - Properties
+    // MARK: Public
 
     /// Unique identifier for this session.
     public let sessionId: String
-
-    /// Internal storage for messages.
-    private var items: [MemoryMessage] = []
-
-    // MARK: - Initialization
-
-    /// Creates a new in-memory session.
-    ///
-    /// - Parameter sessionId: Unique identifier for the session.
-    ///   Defaults to a new UUID string if not provided.
-    public init(sessionId: String = UUID().uuidString) {
-        self.sessionId = sessionId
-    }
 
     // MARK: - Session Protocol Properties
 
@@ -66,6 +53,16 @@ public actor InMemorySession: Session {
     /// Whether the session contains no items.
     public var isEmpty: Bool {
         items.isEmpty
+    }
+
+    // MARK: - Initialization
+
+    /// Creates a new in-memory session.
+    ///
+    /// - Parameter sessionId: Unique identifier for the session.
+    ///   Defaults to a new UUID string if not provided.
+    public init(sessionId: String = UUID().uuidString) {
+        self.sessionId = sessionId
     }
 
     // MARK: - Session Protocol Methods
@@ -82,7 +79,7 @@ public actor InMemorySession: Session {
     ///   - Zero or negative: Returns an empty array
     /// - Returns: Array of messages in chronological order.
     public func getItems(limit: Int?) async throws -> [MemoryMessage] {
-        guard let limit = limit else {
+        guard let limit else {
             return items
         }
 
@@ -124,4 +121,9 @@ public actor InMemorySession: Session {
     public func clearSession() async throws {
         items.removeAll()
     }
+
+    // MARK: Private
+
+    /// Internal storage for messages.
+    private var items: [MemoryMessage] = []
 }

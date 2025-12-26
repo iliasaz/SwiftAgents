@@ -7,7 +7,7 @@ import Foundation
 @testable import SwiftAgents
 import Testing
 
-// MARK: - TraceContext Creation Tests
+// MARK: - TraceContextCreationTests
 
 @Suite("TraceContext Creation Tests")
 struct TraceContextCreationTests {
@@ -77,7 +77,7 @@ struct TraceContextCreationTests {
     }
 }
 
-// MARK: - Task-Local Storage Tests
+// MARK: - TraceContextTaskLocalTests
 
 @Suite("TraceContext Task-Local Storage Tests")
 struct TraceContextTaskLocalTests {
@@ -164,7 +164,7 @@ struct TraceContextTaskLocalTests {
     }
 }
 
-// MARK: - Span Management Tests
+// MARK: - TraceContextSpanManagementTests
 
 @Suite("TraceContext Span Management Tests")
 struct TraceContextSpanManagementTests {
@@ -209,7 +209,7 @@ struct TraceContextSpanManagementTests {
                 return
             }
 
-            let _ = await context.startSpan("operation")
+            _ = await context.startSpan("operation")
             let spans = await context.getSpans()
 
             #expect(spans.count == 1)
@@ -296,9 +296,9 @@ struct TraceContextSpanManagementTests {
                 return
             }
 
-            let _ = await context.startSpan("span-1")
-            let _ = await context.startSpan("span-2")
-            let _ = await context.startSpan("span-3")
+            _ = await context.startSpan("span-1")
+            _ = await context.startSpan("span-2")
+            _ = await context.startSpan("span-3")
 
             let spans = await context.getSpans()
 
@@ -332,7 +332,7 @@ struct TraceContextSpanManagementTests {
     }
 }
 
-// MARK: - Trace Metadata Propagation Tests
+// MARK: - TraceContextMetadataTests
 
 @Suite("TraceContext Metadata Propagation Tests")
 struct TraceContextMetadataTests {
@@ -370,7 +370,7 @@ struct TraceContextMetadataTests {
     }
 }
 
-// MARK: - GroupId Tests
+// MARK: - TraceContextGroupIdTests
 
 @Suite("TraceContext GroupId Tests")
 struct TraceContextGroupIdTests {
@@ -400,7 +400,7 @@ struct TraceContextGroupIdTests {
     }
 }
 
-// MARK: - Duration Calculation Tests
+// MARK: - TraceContextDurationTests
 
 @Suite("TraceContext Duration Tests")
 struct TraceContextDurationTests {
@@ -441,7 +441,7 @@ struct TraceContextDurationTests {
     }
 }
 
-// MARK: - Concurrent Task Access Tests
+// MARK: - TraceContextConcurrentTests
 
 @Suite("TraceContext Concurrent Access Tests")
 struct TraceContextConcurrentTests {
@@ -533,7 +533,7 @@ struct TraceContextConcurrentTests {
     }
 }
 
-// MARK: - withTrace Return Value Tests
+// MARK: - TraceContextReturnValueTests
 
 @Suite("TraceContext withTrace Return Value Tests")
 struct TraceContextReturnValueTests {
@@ -575,7 +575,7 @@ struct TraceContextReturnValueTests {
     }
 }
 
-// MARK: - Edge Cases Tests
+// MARK: - TraceContextEdgeCasesTests
 
 @Suite("TraceContext Edge Cases")
 struct TraceContextEdgeCasesTests {

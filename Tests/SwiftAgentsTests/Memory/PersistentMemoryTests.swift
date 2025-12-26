@@ -81,7 +81,7 @@ struct PersistentMemoryTests {
     }
 
     @Test("getContext formats messages within token limit")
-    func testGetContext() async throws {
+    func getContext() async throws {
         let backend = InMemoryBackend()
         let memory = PersistentMemory(backend: backend, conversationId: "test-4")
 

@@ -92,15 +92,6 @@ public actor SlidingWindowMemory: Memory {
         }
     }
 
-    /// Recalibrates token count by recalculating from all messages.
-    ///
-    /// Called automatically to prevent drift from cumulative estimation errors.
-    private func recalibrateTokenCount() {
-        currentTokenCount = messages.reduce(0) { total, message in
-            total + tokenEstimator.estimateTokens(for: message.formattedContent)
-        }
-    }
-
     public func context(for _: String, tokenLimit: Int) async -> String {
         let effectiveLimit = min(tokenLimit, maxTokens)
         return formatMessagesForContext(messages, tokenLimit: effectiveLimit, tokenEstimator: tokenEstimator)
@@ -132,6 +123,15 @@ public actor SlidingWindowMemory: Memory {
 
     /// How often to recalibrate token count to prevent drift.
     private let recalibrationInterval: Int = 100
+
+    /// Recalibrates token count by recalculating from all messages.
+    ///
+    /// Called automatically to prevent drift from cumulative estimation errors.
+    private func recalibrateTokenCount() {
+        currentTokenCount = messages.reduce(0) { total, message in
+            total + tokenEstimator.estimateTokens(for: message.formattedContent)
+        }
+    }
 }
 
 // MARK: - Batch Operations

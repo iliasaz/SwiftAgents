@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - Session Protocol
+// MARK: - Session
 
 /// Protocol for managing conversation session history.
 ///

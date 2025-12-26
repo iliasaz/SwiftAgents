@@ -107,7 +107,7 @@ public actor ReActAgent: Agent {
 
             // Load conversation history from session (limit to recent messages)
             var sessionHistory: [MemoryMessage] = []
-            if let session = session {
+            if let session {
                 sessionHistory = try await session.getItems(limit: 50)
             }
 
@@ -137,7 +137,7 @@ public actor ReActAgent: Agent {
             try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
 
             // Store turn in session (user + assistant messages)
-            if let session = session {
+            if let session {
                 let assistantMessage = MemoryMessage.assistant(output)
                 try await session.addItems([userMessage, assistantMessage])
             }
@@ -615,14 +615,14 @@ public extension ReActAgent {
 
         /// Creates a new builder.
         public init() {
-            self.tools = []
-            self.instructions = ""
-            self.configuration = .default
-            self.memory = nil
-            self.inferenceProvider = nil
-            self.tracer = nil
-            self.inputGuardrails = []
-            self.outputGuardrails = []
+            tools = []
+            instructions = ""
+            configuration = .default
+            memory = nil
+            inferenceProvider = nil
+            tracer = nil
+            inputGuardrails = []
+            outputGuardrails = []
         }
 
         /// Sets the tools.

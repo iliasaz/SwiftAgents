@@ -7,6 +7,8 @@
 
 import Foundation
 
+// MARK: - AnyAgent
+
 /// Type-erased wrapper for any Agent.
 ///
 /// Enables storing heterogeneous agents in collections while preserving
@@ -28,44 +30,44 @@ import Foundation
 /// AnyAgent uses the box-protocol pattern to achieve type erasure while
 /// maintaining protocol conformance and Sendable safety.
 public struct AnyAgent: Agent, @unchecked Sendable {
-    private let box: any AnyAgentBox
-
-    /// Creates a type-erased wrapper around the given agent.
-    /// - Parameter agent: The agent to wrap.
-    public init<A: Agent>(_ agent: A) {
-        self.box = AgentBox(agent)
-    }
+    // MARK: Public
 
     // MARK: - Agent Protocol Properties
 
     /// The tools available to this agent.
-    public nonisolated var tools: [any Tool] {
+    nonisolated public var tools: [any Tool] {
         box.tools
     }
 
     /// Instructions that define the agent's behavior and role.
-    public nonisolated var instructions: String {
+    nonisolated public var instructions: String {
         box.instructions
     }
 
     /// Configuration settings for the agent.
-    public nonisolated var configuration: AgentConfiguration {
+    nonisolated public var configuration: AgentConfiguration {
         box.configuration
     }
 
     /// Optional memory system for context management.
-    public nonisolated var memory: (any Memory)? {
+    nonisolated public var memory: (any Memory)? {
         box.memory
     }
 
     /// Optional custom inference provider.
-    public nonisolated var inferenceProvider: (any InferenceProvider)? {
+    nonisolated public var inferenceProvider: (any InferenceProvider)? {
         box.inferenceProvider
     }
 
     /// Optional tracer for observability.
-    public nonisolated var tracer: (any Tracer)? {
+    nonisolated public var tracer: (any Tracer)? {
         box.tracer
+    }
+
+    /// Creates a type-erased wrapper around the given agent.
+    /// - Parameter agent: The agent to wrap.
+    public init(_ agent: some Agent) {
+        box = AgentBox(agent)
     }
 
     // MARK: - Agent Protocol Methods
@@ -73,29 +75,35 @@ public struct AnyAgent: Agent, @unchecked Sendable {
     /// Executes the agent with the given input and returns a result.
     /// - Parameters:
     ///   - input: The user's input/query.
+    ///   - session: Optional session for context persistence.
     ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: The result of the agent's execution.
     /// - Throws: `AgentError` if execution fails.
-    public func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
-        try await box.run(input, hooks: hooks)
+    public func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+        try await box.run(input, session: session, hooks: hooks)
     }
 
     /// Streams the agent's execution, yielding events as they occur.
     /// - Parameters:
     ///   - input: The user's input/query.
+    ///   - session: Optional session for context persistence.
     ///   - hooks: Optional hooks for lifecycle callbacks.
     /// - Returns: An async stream of agent events.
-    public nonisolated func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
-        box.stream(input, hooks: hooks)
+    nonisolated public func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+        box.stream(input, session: session, hooks: hooks)
     }
 
     /// Cancels any ongoing execution.
     public func cancel() async {
         await box.cancel()
     }
+
+    // MARK: Private
+
+    private let box: any AnyAgentBox
 }
 
-// MARK: - Private Box Protocol
+// MARK: - AnyAgentBox
 
 /// Private protocol for type erasure implementation.
 private protocol AnyAgentBox: Sendable {
@@ -108,22 +116,16 @@ private protocol AnyAgentBox: Sendable {
     var tracer: (any Tracer)? { get }
 
     // Methods
-    func run(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult
-    func stream(_ input: String, hooks: (any RunHooks)?) -> AsyncThrowingStream<AgentEvent, Error>
+    func run(_ input: String, session: (any Session)?, hooks: (any RunHooks)?) async throws -> AgentResult
+    func stream(_ input: String, session: (any Session)?, hooks: (any RunHooks)?) -> AsyncThrowingStream<AgentEvent, Error>
     func cancel() async
 }
 
-// MARK: - Private Box Implementation
+// MARK: - AgentBox
 
 /// Private class that wraps a concrete Agent implementation.
 private final class AgentBox<A: Agent>: AnyAgentBox, @unchecked Sendable {
-    private let agent: A
-
-    init(_ agent: A) {
-        self.agent = agent
-    }
-
-    // MARK: - Properties
+    // MARK: Internal
 
     var tools: [any Tool] {
         agent.tools
@@ -149,17 +151,25 @@ private final class AgentBox<A: Agent>: AnyAgentBox, @unchecked Sendable {
         agent.tracer
     }
 
-    // MARK: - Methods
-
-    func run(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
-        try await agent.run(input, hooks: hooks)
+    init(_ agent: A) {
+        self.agent = agent
     }
 
-    func stream(_ input: String, hooks: (any RunHooks)?) -> AsyncThrowingStream<AgentEvent, Error> {
-        agent.stream(input, hooks: hooks)
+    // MARK: - Methods
+
+    func run(_ input: String, session: (any Session)?, hooks: (any RunHooks)?) async throws -> AgentResult {
+        try await agent.run(input, session: session, hooks: hooks)
+    }
+
+    func stream(_ input: String, session: (any Session)?, hooks: (any RunHooks)?) -> AsyncThrowingStream<AgentEvent, Error> {
+        agent.stream(input, session: session, hooks: hooks)
     }
 
     func cancel() async {
         await agent.cancel()
     }
+
+    // MARK: Private
+
+    private let agent: A
 }

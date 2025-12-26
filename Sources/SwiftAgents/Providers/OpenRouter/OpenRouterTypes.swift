@@ -5,13 +5,15 @@
 
 import Foundation
 #if canImport(FoundationNetworking)
-import FoundationNetworking
+    import FoundationNetworking
 #endif
 
 // MARK: - OpenRouterRequest
 
 /// A request to the OpenRouter chat completions API.
 public struct OpenRouterRequest: Codable, Sendable {
+    // MARK: Public
+
     /// The model identifier (e.g., "anthropic/claude-3-opus").
     public let model: String
 
@@ -77,6 +79,8 @@ public struct OpenRouterRequest: Codable, Sendable {
         self.toolChoice = toolChoice
     }
 
+    // MARK: Private
+
     private enum CodingKeys: String, CodingKey {
         case model
         case messages
@@ -97,6 +101,8 @@ public struct OpenRouterRequest: Codable, Sendable {
 
 /// A message in the OpenRouter conversation.
 public struct OpenRouterMessage: Codable, Sendable, Equatable {
+    // MARK: Public
+
     /// The role of the message author.
     public let role: String
 
@@ -120,13 +126,6 @@ public struct OpenRouterMessage: Codable, Sendable, Equatable {
         self.content = content
         self.toolCalls = toolCalls
         self.toolCallId = toolCallId
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case role
-        case content
-        case toolCalls = "tool_calls"
-        case toolCallId = "tool_call_id"
     }
 
     // MARK: - Factory Methods
@@ -180,26 +179,31 @@ public struct OpenRouterMessage: Codable, Sendable, Equatable {
             toolCallId: toolCallId
         )
     }
+
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey {
+        case role
+        case content
+        case toolCalls = "tool_calls"
+        case toolCallId = "tool_call_id"
+    }
 }
 
 // MARK: - OpenRouterMessageContent
 
 /// The content of a message, which can be text or multimodal parts.
 public enum OpenRouterMessageContent: Sendable, Equatable {
-    /// Simple text content.
-    case text(String)
-
-    /// Multimodal content parts (text and/or images).
-    case parts([OpenRouterContentPart])
+    // MARK: Public
 
     /// Extracts the text content, concatenating parts if necessary.
     public var textValue: String? {
         switch self {
-        case .text(let string):
+        case let .text(string):
             return string
-        case .parts(let parts):
+        case let .parts(parts):
             let texts = parts.compactMap { part -> String? in
-                if case .text(let text) = part {
+                if case let .text(text) = part {
                     return text
                 }
                 return nil
@@ -207,7 +211,15 @@ public enum OpenRouterMessageContent: Sendable, Equatable {
             return texts.isEmpty ? nil : texts.joined()
         }
     }
+
+    /// Simple text content.
+    case text(String)
+
+    /// Multimodal content parts (text and/or images).
+    case parts([OpenRouterContentPart])
 }
+
+// MARK: Codable
 
 extension OpenRouterMessageContent: Codable {
     public init(from decoder: Decoder) throws {
@@ -234,9 +246,9 @@ extension OpenRouterMessageContent: Codable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
-        case .text(let string):
+        case let .text(string):
             try container.encode(string)
-        case .parts(let parts):
+        case let .parts(parts):
             try container.encode(parts)
         }
     }
@@ -246,22 +258,7 @@ extension OpenRouterMessageContent: Codable {
 
 /// A content part for multimodal messages.
 public enum OpenRouterContentPart: Codable, Sendable, Equatable {
-    /// Text content.
-    case text(String)
-
-    /// Image content with URL and optional detail level.
-    case imageUrl(url: String, detail: String?)
-
-    private enum CodingKeys: String, CodingKey {
-        case type
-        case text
-        case imageUrl = "image_url"
-    }
-
-    private struct ImageUrlContent: Codable, Equatable {
-        let url: String
-        let detail: String?
-    }
+    // MARK: Public
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -286,13 +283,32 @@ public enum OpenRouterContentPart: Codable, Sendable, Equatable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .text(let text):
+        case let .text(text):
             try container.encode("text", forKey: .type)
             try container.encode(text, forKey: .text)
-        case .imageUrl(let url, let detail):
+        case let .imageUrl(url, detail):
             try container.encode("image_url", forKey: .type)
             try container.encode(ImageUrlContent(url: url, detail: detail), forKey: .imageUrl)
         }
+    }
+
+    /// Text content.
+    case text(String)
+
+    /// Image content with URL and optional detail level.
+    case imageUrl(url: String, detail: String?)
+
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case imageUrl = "image_url"
+    }
+
+    private struct ImageUrlContent: Codable, Equatable {
+        let url: String
+        let detail: String?
     }
 }
 
@@ -313,7 +329,11 @@ public enum OpenRouterToolChoice: Sendable, Equatable {
     case function(name: String)
 }
 
+// MARK: Encodable
+
 extension OpenRouterToolChoice: Encodable {
+    // MARK: Public
+
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
@@ -323,10 +343,12 @@ extension OpenRouterToolChoice: Encodable {
             try container.encode("auto")
         case .required:
             try container.encode("required")
-        case .function(let name):
+        case let .function(name):
             try container.encode(FunctionChoice(type: "function", function: FunctionName(name: name)))
         }
     }
+
+    // MARK: Private
 
     private struct FunctionChoice: Encodable {
         let type: String
@@ -338,7 +360,11 @@ extension OpenRouterToolChoice: Encodable {
     }
 }
 
+// MARK: Decodable
+
 extension OpenRouterToolChoice: Decodable {
+    // MARK: Public
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
 
@@ -365,6 +391,8 @@ extension OpenRouterToolChoice: Decodable {
         self = .function(name: object.function.name)
     }
 
+    // MARK: Private
+
     private struct FunctionChoiceDecoding: Decodable {
         let type: String
         let function: FunctionNameDecoding
@@ -387,7 +415,7 @@ public struct OpenRouterTool: Codable, Sendable, Equatable {
 
     /// Creates a new function tool.
     public init(function: OpenRouterToolFunction) {
-        self.type = "function"
+        type = "function"
         self.function = function
     }
 
@@ -471,6 +499,8 @@ public struct OpenRouterResponse: Codable, Sendable {
 
 /// A single completion choice in an OpenRouter response.
 public struct OpenRouterChoice: Codable, Sendable {
+    // MARK: Public
+
     /// The index of this choice.
     public let index: Int
 
@@ -491,6 +521,8 @@ public struct OpenRouterChoice: Codable, Sendable {
         self.finishReason = finishReason
     }
 
+    // MARK: Private
+
     private enum CodingKeys: String, CodingKey {
         case index
         case message
@@ -502,6 +534,8 @@ public struct OpenRouterChoice: Codable, Sendable {
 
 /// A message in an OpenRouter response.
 public struct OpenRouterResponseMessage: Codable, Sendable {
+    // MARK: Public
+
     /// The role of the message author.
     public let role: String
 
@@ -521,6 +555,8 @@ public struct OpenRouterResponseMessage: Codable, Sendable {
         self.content = content
         self.toolCalls = toolCalls
     }
+
+    // MARK: Private
 
     private enum CodingKeys: String, CodingKey {
         case role
@@ -575,6 +611,8 @@ public struct OpenRouterFunctionCall: Codable, Sendable, Equatable {
 
 /// Token usage statistics from an OpenRouter response.
 public struct OpenRouterUsage: Codable, Sendable {
+    // MARK: Public
+
     /// The number of tokens in the prompt.
     public let promptTokens: Int
 
@@ -595,6 +633,8 @@ public struct OpenRouterUsage: Codable, Sendable {
         self.totalTokens = totalTokens
     }
 
+    // MARK: Private
+
     private enum CodingKeys: String, CodingKey {
         case promptTokens = "prompt_tokens"
         case completionTokens = "completion_tokens"
@@ -603,10 +643,13 @@ public struct OpenRouterUsage: Codable, Sendable {
 }
 
 // MARK: - OpenRouterStreamChoice
+
 // Note: OpenRouterStreamChunk is defined in OpenRouterStreamParser.swift with full streaming support
 
 /// A streaming choice containing a delta.
 public struct OpenRouterStreamChoice: Codable, Sendable {
+    // MARK: Public
+
     /// The index of this choice.
     public let index: Int
 
@@ -615,6 +658,8 @@ public struct OpenRouterStreamChoice: Codable, Sendable {
 
     /// The reason the model stopped generating (present in final chunk).
     public let finishReason: String?
+
+    // MARK: Private
 
     private enum CodingKeys: String, CodingKey {
         case index
@@ -627,6 +672,8 @@ public struct OpenRouterStreamChoice: Codable, Sendable {
 
 /// The delta content in a streaming chunk.
 public struct OpenRouterDelta: Codable, Sendable {
+    // MARK: Public
+
     /// The role (present in first chunk).
     public let role: String?
 
@@ -635,6 +682,8 @@ public struct OpenRouterDelta: Codable, Sendable {
 
     /// Tool call fragments.
     public let toolCalls: [OpenRouterDeltaToolCall]?
+
+    // MARK: Private
 
     private enum CodingKeys: String, CodingKey {
         case role
@@ -675,6 +724,8 @@ public struct OpenRouterDeltaFunction: Codable, Sendable {
 
 /// Rate limit information parsed from response headers.
 public struct OpenRouterRateLimitInfo: Sendable, Equatable {
+    // MARK: Public
+
     /// The rate limit ceiling for requests.
     public let requestsLimit: Int?
 
@@ -695,12 +746,12 @@ public struct OpenRouterRateLimitInfo: Sendable, Equatable {
 
     /// Creates rate limit info from empty values.
     public init() {
-        self.requestsLimit = nil
-        self.requestsRemaining = nil
-        self.requestsReset = nil
-        self.tokensLimit = nil
-        self.tokensRemaining = nil
-        self.tokensReset = nil
+        requestsLimit = nil
+        requestsRemaining = nil
+        requestsReset = nil
+        tokensLimit = nil
+        tokensRemaining = nil
+        tokensReset = nil
     }
 
     /// Creates rate limit info with explicit values.
@@ -759,12 +810,14 @@ public struct OpenRouterRateLimitInfo: Sendable, Equatable {
         parse(from: response.allHeaderFields)
     }
 
+    // MARK: Private
+
     /// Parses a reset time string, which can be either:
     /// - A Unix timestamp (seconds since epoch)
     /// - A duration string like "1s", "1m", "1h"
     /// - An ISO 8601 date string
     private static func parseResetTime(_ value: String?) -> Date? {
-        guard let value = value else { return nil }
+        guard let value else { return nil }
 
         // Try parsing as Unix timestamp
         if let timestamp = Double(value) {
@@ -793,9 +846,9 @@ public struct OpenRouterRateLimitInfo: Sendable, Equatable {
         let pattern = #"^(\d+(?:\.\d+)?)(ms|s|m|h)$"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
               let match = regex.firstMatch(
-                in: value,
-                options: [],
-                range: NSRange(value.startIndex..., in: value)
+                  in: value,
+                  options: [],
+                  range: NSRange(value.startIndex..., in: value)
               ),
               let numberRange = Range(match.range(at: 1), in: value),
               let unitRange = Range(match.range(at: 2), in: value),
@@ -819,7 +872,7 @@ public struct OpenRouterRateLimitInfo: Sendable, Equatable {
     }
 }
 
-// MARK: - OpenRouterError
+// MARK: - OpenRouterErrorResponse
 
 /// An error response from the OpenRouter API.
 public struct OpenRouterErrorResponse: Codable, Sendable {

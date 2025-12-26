@@ -7,7 +7,7 @@ import Foundation
 @testable import SwiftAgents
 import Testing
 
-// MARK: - SpanStatus Tests
+// MARK: - SpanStatusTests
 
 @Suite("SpanStatus Tests")
 struct SpanStatusTests {
@@ -53,7 +53,7 @@ struct SpanStatusTests {
     }
 }
 
-// MARK: - TraceSpan Tests
+// MARK: - TraceSpanTests
 
 @Suite("TraceSpan Tests")
 struct TraceSpanTests {

@@ -101,7 +101,7 @@ struct ConversationMemoryTests {
     // MARK: - Context Retrieval Tests
 
     @Test("Gets context within token limit")
-    func testGetContext() async {
+    func getContext() async {
         let memory = ConversationMemory()
 
         await memory.add(.user("Hello"))

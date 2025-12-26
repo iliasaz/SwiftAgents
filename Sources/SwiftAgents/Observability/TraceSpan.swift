@@ -36,8 +36,6 @@ public enum SpanStatus: String, Sendable, Codable, CaseIterable {
 /// )
 /// ```
 public struct TraceSpan: Sendable, Identifiable, Equatable, Hashable {
-    // MARK: - Properties
-
     /// Unique identifier for this span.
     public let id: UUID
 
@@ -60,6 +58,17 @@ public struct TraceSpan: Sendable, Identifiable, Equatable, Hashable {
 
     /// Additional metadata associated with this span.
     public let metadata: [String: SendableValue]
+
+    /// Calculated duration of this span in seconds.
+    ///
+    /// Returns `nil` if the span is still active (no endTime).
+    /// Returns the time interval between startTime and endTime otherwise.
+    public var duration: TimeInterval? {
+        guard let endTime else {
+            return nil
+        }
+        return endTime.timeIntervalSince(startTime)
+    }
 
     // MARK: - Initialization
 
@@ -91,19 +100,6 @@ public struct TraceSpan: Sendable, Identifiable, Equatable, Hashable {
         self.metadata = metadata
     }
 
-    // MARK: - Computed Properties
-
-    /// Calculated duration of this span in seconds.
-    ///
-    /// Returns `nil` if the span is still active (no endTime).
-    /// Returns the time interval between startTime and endTime otherwise.
-    public var duration: TimeInterval? {
-        guard let endTime else {
-            return nil
-        }
-        return endTime.timeIntervalSince(startTime)
-    }
-
     // MARK: - Methods
 
     /// Returns a completed copy of this span with the given status.
@@ -133,7 +129,7 @@ public struct TraceSpan: Sendable, Identifiable, Equatable, Hashable {
     }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension TraceSpan: CustomStringConvertible {
     public var description: String {
@@ -152,7 +148,7 @@ extension TraceSpan: CustomStringConvertible {
     }
 }
 
-// MARK: - CustomDebugStringConvertible
+// MARK: CustomDebugStringConvertible
 
 extension TraceSpan: CustomDebugStringConvertible {
     public var debugDescription: String {

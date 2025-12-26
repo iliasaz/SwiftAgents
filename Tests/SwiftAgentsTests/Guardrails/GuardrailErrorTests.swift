@@ -12,9 +12,8 @@ import Testing
 
 @Suite("GuardrailError Tests")
 struct GuardrailErrorTests {
-    
     // MARK: - Input Tripwire Tests
-    
+
     @Test("Input tripwire error contains correct values")
     func testInputTripwireTriggered() {
         // Given
@@ -23,14 +22,14 @@ struct GuardrailErrorTests {
         let outputInfo: SendableValue = .dictionary([
             "detected": .array([.string("email"), .string("phone")])
         ])
-        
+
         // When
         let error = GuardrailError.inputTripwireTriggered(
             guardrailName: guardrailName,
             message: message,
             outputInfo: outputInfo
         )
-        
+
         // Then
         if case let .inputTripwireTriggered(name, msg, info) = error {
             #expect(name == guardrailName)
@@ -40,20 +39,20 @@ struct GuardrailErrorTests {
             Issue.record("Expected inputTripwireTriggered case")
         }
     }
-    
+
     @Test("Input tripwire error with nil outputInfo")
-    func testInputTripwireWithNilOutputInfo() {
+    func inputTripwireWithNilOutputInfo() {
         // Given
         let guardrailName = "ContentFilter"
         let message = "Inappropriate content detected"
-        
+
         // When
         let error = GuardrailError.inputTripwireTriggered(
             guardrailName: guardrailName,
             message: message,
             outputInfo: nil
         )
-        
+
         // Then
         if case let .inputTripwireTriggered(name, msg, info) = error {
             #expect(name == guardrailName)
@@ -63,19 +62,19 @@ struct GuardrailErrorTests {
             Issue.record("Expected inputTripwireTriggered case")
         }
     }
-    
+
     @Test("Input tripwire error with nil message")
-    func testInputTripwireWithNilMessage() {
+    func inputTripwireWithNilMessage() {
         // Given
         let guardrailName = "Validator"
-        
+
         // When
         let error = GuardrailError.inputTripwireTriggered(
             guardrailName: guardrailName,
             message: nil,
             outputInfo: nil
         )
-        
+
         // Then
         if case let .inputTripwireTriggered(name, msg, _) = error {
             #expect(name == guardrailName)
@@ -84,9 +83,9 @@ struct GuardrailErrorTests {
             Issue.record("Expected inputTripwireTriggered case")
         }
     }
-    
+
     // MARK: - Output Tripwire Tests
-    
+
     @Test("Output tripwire error contains all associated values")
     func testOutputTripwireTriggered() {
         // Given
@@ -97,7 +96,7 @@ struct GuardrailErrorTests {
             "toxicityScore": .double(0.92),
             "category": .string("hate_speech")
         ])
-        
+
         // When
         let error = GuardrailError.outputTripwireTriggered(
             guardrailName: guardrailName,
@@ -105,7 +104,7 @@ struct GuardrailErrorTests {
             message: message,
             outputInfo: outputInfo
         )
-        
+
         // Then
         if case let .outputTripwireTriggered(gName, aName, msg, info) = error {
             #expect(gName == guardrailName)
@@ -116,14 +115,14 @@ struct GuardrailErrorTests {
             Issue.record("Expected outputTripwireTriggered case")
         }
     }
-    
+
     @Test("Output tripwire error with nil outputInfo")
-    func testOutputTripwireWithNilOutputInfo() {
+    func outputTripwireWithNilOutputInfo() {
         // Given
         let guardrailName = "OutputValidator"
         let agentName = "DataAgent"
         let message = "Validation failed"
-        
+
         // When
         let error = GuardrailError.outputTripwireTriggered(
             guardrailName: guardrailName,
@@ -131,7 +130,7 @@ struct GuardrailErrorTests {
             message: message,
             outputInfo: nil
         )
-        
+
         // Then
         if case let .outputTripwireTriggered(_, _, _, info) = error {
             #expect(info == nil)
@@ -139,9 +138,9 @@ struct GuardrailErrorTests {
             Issue.record("Expected outputTripwireTriggered case")
         }
     }
-    
+
     // MARK: - Tool Input Tripwire Tests
-    
+
     @Test("Tool input tripwire error contains guardrailName and toolName")
     func testToolInputTripwireTriggered() {
         // Given
@@ -152,7 +151,7 @@ struct GuardrailErrorTests {
             "pattern": .string("DROP TABLE"),
             "severity": .string("critical")
         ])
-        
+
         // When
         let error = GuardrailError.toolInputTripwireTriggered(
             guardrailName: guardrailName,
@@ -160,7 +159,7 @@ struct GuardrailErrorTests {
             message: message,
             outputInfo: outputInfo
         )
-        
+
         // Then
         if case let .toolInputTripwireTriggered(gName, tName, msg, info) = error {
             #expect(gName == guardrailName)
@@ -171,14 +170,14 @@ struct GuardrailErrorTests {
             Issue.record("Expected toolInputTripwireTriggered case")
         }
     }
-    
+
     @Test("Tool input tripwire error with nil outputInfo")
-    func testToolInputTripwireWithNilOutputInfo() {
+    func toolInputTripwireWithNilOutputInfo() {
         // Given
         let guardrailName = "ToolGuard"
         let toolName = "FileSystem"
         let message = "Unauthorized file access"
-        
+
         // When
         let error = GuardrailError.toolInputTripwireTriggered(
             guardrailName: guardrailName,
@@ -186,7 +185,7 @@ struct GuardrailErrorTests {
             message: message,
             outputInfo: nil
         )
-        
+
         // Then
         if case let .toolInputTripwireTriggered(_, _, _, info) = error {
             #expect(info == nil)
@@ -194,9 +193,9 @@ struct GuardrailErrorTests {
             Issue.record("Expected toolInputTripwireTriggered case")
         }
     }
-    
+
     // MARK: - Tool Output Tripwire Tests
-    
+
     @Test("Tool output tripwire error contains all values")
     func testToolOutputTripwireTriggered() {
         // Given
@@ -209,7 +208,7 @@ struct GuardrailErrorTests {
             ]),
             "reason": .string("phishing_detected")
         ])
-        
+
         // When
         let error = GuardrailError.toolOutputTripwireTriggered(
             guardrailName: guardrailName,
@@ -217,7 +216,7 @@ struct GuardrailErrorTests {
             message: message,
             outputInfo: outputInfo
         )
-        
+
         // Then
         if case let .toolOutputTripwireTriggered(gName, tName, msg, info) = error {
             #expect(gName == guardrailName)
@@ -228,14 +227,14 @@ struct GuardrailErrorTests {
             Issue.record("Expected toolOutputTripwireTriggered case")
         }
     }
-    
+
     @Test("Tool output tripwire error with nil outputInfo")
-    func testToolOutputTripwireWithNilOutputInfo() {
+    func toolOutputTripwireWithNilOutputInfo() {
         // Given
         let guardrailName = "OutputGuard"
         let toolName = "Calculator"
         let message = "Invalid output format"
-        
+
         // When
         let error = GuardrailError.toolOutputTripwireTriggered(
             guardrailName: guardrailName,
@@ -243,7 +242,7 @@ struct GuardrailErrorTests {
             message: message,
             outputInfo: nil
         )
-        
+
         // Then
         if case let .toolOutputTripwireTriggered(_, _, _, info) = error {
             #expect(info == nil)
@@ -251,21 +250,21 @@ struct GuardrailErrorTests {
             Issue.record("Expected toolOutputTripwireTriggered case")
         }
     }
-    
+
     // MARK: - Execution Failed Tests
-    
+
     @Test("Execution failed error contains guardrailName and error message")
     func testExecutionFailed() {
         // Given
         let guardrailName = "AsyncGuardrail"
         let errorMessage = "Network timeout occurred"
-        
+
         // When
         let error = GuardrailError.executionFailed(
             guardrailName: guardrailName,
             underlyingError: errorMessage
         )
-        
+
         // Then
         if case let .executionFailed(name, message) = error {
             #expect(name == guardrailName)
@@ -274,19 +273,19 @@ struct GuardrailErrorTests {
             Issue.record("Expected executionFailed case")
         }
     }
-    
+
     @Test("Execution failed error with detailed error description")
-    func testExecutionFailedWithDetailedError() {
+    func executionFailedWithDetailedError() {
         // Given
         let guardrailName = "ValidatorGuardrail"
         let errorMessage = "Failed to connect to validation service: Connection refused (errno: 61)"
-        
+
         // When
         let error = GuardrailError.executionFailed(
             guardrailName: guardrailName,
             underlyingError: errorMessage
         )
-        
+
         // Then
         if case let .executionFailed(name, message) = error {
             #expect(name == guardrailName)
@@ -295,46 +294,46 @@ struct GuardrailErrorTests {
             Issue.record("Expected executionFailed case")
         }
     }
-    
+
     // MARK: - LocalizedError Conformance Tests
-    
+
     @Test("Input tripwire error has descriptive errorDescription")
-    func testInputTripwireErrorDescription() {
+    func inputTripwireErrorDescription() {
         // Given
         let error = GuardrailError.inputTripwireTriggered(
             guardrailName: "TestGuard",
             message: "Input blocked",
             outputInfo: nil
         )
-        
+
         // When
         let description = error.errorDescription
-        
+
         // Then
         #expect(description != nil)
         #expect(description!.contains("TestGuard"))
         #expect(description!.contains("Input blocked"))
     }
-    
+
     @Test("Input tripwire error description with nil message")
-    func testInputTripwireErrorDescriptionNilMessage() {
+    func inputTripwireErrorDescriptionNilMessage() {
         // Given
         let error = GuardrailError.inputTripwireTriggered(
             guardrailName: "TestGuard",
             message: nil,
             outputInfo: nil
         )
-        
+
         // When
         let description = error.errorDescription
-        
+
         // Then
         #expect(description != nil)
         #expect(description!.contains("TestGuard"))
     }
-    
+
     @Test("Output tripwire error has descriptive errorDescription")
-    func testOutputTripwireErrorDescription() {
+    func outputTripwireErrorDescription() {
         // Given
         let error = GuardrailError.outputTripwireTriggered(
             guardrailName: "OutputGuard",
@@ -342,19 +341,19 @@ struct GuardrailErrorTests {
             message: "Output blocked",
             outputInfo: nil
         )
-        
+
         // When
         let description = error.errorDescription
-        
+
         // Then
         #expect(description != nil)
         #expect(description!.contains("OutputGuard"))
         #expect(description!.contains("MyAgent"))
         #expect(description!.contains("Output blocked"))
     }
-    
+
     @Test("Tool input tripwire error has descriptive errorDescription")
-    func testToolInputTripwireErrorDescription() {
+    func toolInputTripwireErrorDescription() {
         // Given
         let error = GuardrailError.toolInputTripwireTriggered(
             guardrailName: "ToolGuard",
@@ -362,19 +361,19 @@ struct GuardrailErrorTests {
             message: "Tool input blocked",
             outputInfo: nil
         )
-        
+
         // When
         let description = error.errorDescription
-        
+
         // Then
         #expect(description != nil)
         #expect(description!.contains("ToolGuard"))
         #expect(description!.contains("SearchTool"))
         #expect(description!.contains("Tool input blocked"))
     }
-    
+
     @Test("Tool output tripwire error has descriptive errorDescription")
-    func testToolOutputTripwireErrorDescription() {
+    func toolOutputTripwireErrorDescription() {
         // Given
         let error = GuardrailError.toolOutputTripwireTriggered(
             guardrailName: "OutputFilter",
@@ -382,53 +381,53 @@ struct GuardrailErrorTests {
             message: "Tool output blocked",
             outputInfo: nil
         )
-        
+
         // When
         let description = error.errorDescription
-        
+
         // Then
         #expect(description != nil)
         #expect(description!.contains("OutputFilter"))
         #expect(description!.contains("WebTool"))
         #expect(description!.contains("Tool output blocked"))
     }
-    
+
     @Test("Execution failed error has descriptive errorDescription")
-    func testExecutionFailedErrorDescription() {
+    func executionFailedErrorDescription() {
         // Given
         let errorMessage = "Test failure occurred"
         let error = GuardrailError.executionFailed(
             guardrailName: "AsyncGuard",
             underlyingError: errorMessage
         )
-        
+
         // When
         let description = error.errorDescription
-        
+
         // Then
         #expect(description != nil)
         #expect(description!.contains("AsyncGuard"))
         #expect(description!.contains("Test failure"))
     }
-    
+
     // MARK: - Sendable Conformance Tests
-    
+
     @Test("GuardrailError is Sendable across async boundaries")
-    func testSendableInAsyncContext() async {
+    func sendableInAsyncContext() async {
         // Given
         let error = GuardrailError.inputTripwireTriggered(
             guardrailName: "TestGuard",
             message: "Test error",
             outputInfo: .string("info")
         )
-        
+
         // When - pass error across async boundary
         let receivedError = await withCheckedContinuation { continuation in
             Task {
                 continuation.resume(returning: error)
             }
         }
-        
+
         // Then
         if case let .inputTripwireTriggered(name1, msg1, info1) = error,
            case let .inputTripwireTriggered(name2, msg2, info2) = receivedError {
@@ -439,9 +438,9 @@ struct GuardrailErrorTests {
             Issue.record("Error cases don't match")
         }
     }
-    
+
     @Test("GuardrailError can be thrown across async boundaries")
-    func testSendableErrorThrown() async {
+    func sendableErrorThrown() async {
         // Given
         func throwingFunction() async throws -> String {
             throw GuardrailError.inputTripwireTriggered(
@@ -450,7 +449,7 @@ struct GuardrailErrorTests {
                 outputInfo: nil
             )
         }
-        
+
         // When/Then
         do {
             _ = try await throwingFunction()
@@ -466,22 +465,22 @@ struct GuardrailErrorTests {
             Issue.record("Wrong error type")
         }
     }
-    
+
     @Test("GuardrailError can be stored in actor")
-    func testSendableWithActor() async {
+    func sendableWithActor() async {
         // Given
         actor ErrorStore {
             private var storedError: GuardrailError?
-            
+
             func store(_ error: GuardrailError) {
                 storedError = error
             }
-            
+
             func retrieve() -> GuardrailError? {
                 storedError
             }
         }
-        
+
         let store = ErrorStore()
         let error = GuardrailError.outputTripwireTriggered(
             guardrailName: "Guard",
@@ -489,11 +488,11 @@ struct GuardrailErrorTests {
             message: "Error",
             outputInfo: nil
         )
-        
+
         // When
         await store.store(error)
         let retrieved = await store.retrieve()
-        
+
         // Then
         #expect(retrieved != nil)
         if case let .outputTripwireTriggered(gName1, aName1, msg1, _) = error,
@@ -505,18 +504,18 @@ struct GuardrailErrorTests {
             Issue.record("Error cases don't match")
         }
     }
-    
+
     // MARK: - Edge Cases
-    
+
     @Test("Error with empty message string")
-    func testErrorWithEmptyMessage() {
+    func errorWithEmptyMessage() {
         // Given
         let error = GuardrailError.inputTripwireTriggered(
             guardrailName: "Guard",
             message: "",
             outputInfo: nil
         )
-        
+
         // Then
         if case let .inputTripwireTriggered(_, msg, _) = error {
             #expect(msg == "")
@@ -524,9 +523,9 @@ struct GuardrailErrorTests {
             Issue.record("Expected inputTripwireTriggered case")
         }
     }
-    
+
     @Test("Error with complex nested outputInfo")
-    func testErrorWithComplexOutputInfo() {
+    func errorWithComplexOutputInfo() {
         // Given
         let complexInfo: SendableValue = .dictionary([
             "violations": .array([
@@ -540,14 +539,14 @@ struct GuardrailErrorTests {
                 ])
             ])
         ])
-        
+
         // When
         let error = GuardrailError.inputTripwireTriggered(
             guardrailName: "MultiCheck",
             message: "Multiple violations",
             outputInfo: complexInfo
         )
-        
+
         // Then
         if case let .inputTripwireTriggered(_, _, info) = error {
             #expect(info == complexInfo)
@@ -555,9 +554,9 @@ struct GuardrailErrorTests {
             Issue.record("Expected inputTripwireTriggered case")
         }
     }
-    
+
     @Test("All error cases have unique patterns")
-    func testAllErrorCasesUnique() {
+    func allErrorCasesUnique() {
         // Given
         let errors: [GuardrailError] = [
             .inputTripwireTriggered(guardrailName: "G1", message: "M1", outputInfo: nil),
@@ -566,11 +565,11 @@ struct GuardrailErrorTests {
             .toolOutputTripwireTriggered(guardrailName: "G4", toolName: "T2", message: "M4", outputInfo: nil),
             .executionFailed(guardrailName: "G5", underlyingError: "Test error")
         ]
-        
+
         // Then - each should have a unique error description
-        let descriptions = errors.compactMap { $0.errorDescription }
+        let descriptions = errors.compactMap(\.errorDescription)
         #expect(descriptions.count == 5)
-        
+
         // Verify we can distinguish between cases
         var caseNames: Set<String> = []
         for error in errors {
