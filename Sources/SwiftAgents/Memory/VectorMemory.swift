@@ -8,7 +8,7 @@
 import Foundation
 
 #if canImport(Accelerate)
-import Accelerate
+    import Accelerate
 #endif
 
 // MARK: - VectorMemory
@@ -55,13 +55,7 @@ import Accelerate
 /// As an actor, `VectorMemory` is automatically thread-safe.
 /// All operations are serialized through the actor's executor.
 public actor VectorMemory: Memory {
-    // MARK: - Types
-
-    /// A message paired with its embedding vector.
-    private struct EmbeddedMessage: Sendable {
-        let message: MemoryMessage
-        let embedding: [Float]
-    }
+    // MARK: Public
 
     /// Search result containing a message and its similarity score.
     public struct SearchResult: Sendable {
@@ -81,14 +75,6 @@ public actor VectorMemory: Memory {
 
     /// The embedding provider used to vectorize messages.
     public let embeddingProvider: any EmbeddingProvider
-
-    // MARK: - State
-
-    /// Stored messages with their embeddings.
-    private var embeddedMessages: [EmbeddedMessage] = []
-
-    /// Token estimator for context retrieval.
-    private let tokenEstimator: any TokenEstimator
 
     // MARK: - Memory Protocol Properties
 
@@ -119,6 +105,27 @@ public actor VectorMemory: Memory {
         self.similarityThreshold = max(0, min(1, similarityThreshold))
         self.maxResults = max(1, maxResults)
         self.tokenEstimator = tokenEstimator
+    }
+
+    // MARK: - SIMD-Optimized Vector Operations
+
+    /// Calculates cosine similarity between two vectors.
+    ///
+    /// Uses SIMD-optimized operations via Accelerate on Apple platforms,
+    /// with a portable fallback for other platforms.
+    ///
+    /// - Parameters:
+    ///   - a: First vector.
+    ///   - b: Second vector.
+    /// - Returns: Cosine similarity score between -1 and 1 (1 = identical).
+    public static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
+        guard a.count == b.count, !a.isEmpty else { return 0 }
+
+        #if canImport(Accelerate)
+            return accelerateCosineSimilarity(a, b)
+        #else
+            return fallbackCosineSimilarity(a, b)
+        #endif
     }
 
     // MARK: - Memory Protocol Implementation
@@ -225,7 +232,7 @@ public actor VectorMemory: Memory {
         return results
             .sorted { $0.similarity > $1.similarity }
             .prefix(maxResults)
-            .map { $0 }
+            .map(\.self)
     }
 
     // MARK: - Batch Operations
@@ -274,6 +281,57 @@ public actor VectorMemory: Memory {
         embeddedMessages.filter { $0.message.role == role }.map(\.message)
     }
 
+    // MARK: Private
+
+    // MARK: - Types
+
+    /// A message paired with its embedding vector.
+    private struct EmbeddedMessage: Sendable {
+        let message: MemoryMessage
+        let embedding: [Float]
+    }
+
+    // MARK: - State
+
+    /// Stored messages with their embeddings.
+    private var embeddedMessages: [EmbeddedMessage] = []
+
+    /// Token estimator for context retrieval.
+    private let tokenEstimator: any TokenEstimator
+
+    #if canImport(Accelerate)
+        /// SIMD-optimized cosine similarity using Accelerate framework.
+        private static func accelerateCosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
+            var dotProduct: Float = 0
+            var normA: Float = 0
+            var normB: Float = 0
+
+            // Use vDSP for vectorized operations
+            vDSP_dotpr(a, 1, b, 1, &dotProduct, vDSP_Length(a.count))
+            vDSP_dotpr(a, 1, a, 1, &normA, vDSP_Length(a.count))
+            vDSP_dotpr(b, 1, b, 1, &normB, vDSP_Length(b.count))
+
+            let denominator = sqrt(normA) * sqrt(normB)
+            return denominator > 0 ? dotProduct / denominator : 0
+        }
+    #endif
+
+    /// Portable fallback cosine similarity implementation.
+    private static func fallbackCosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
+        var dotProduct: Float = 0
+        var normA: Float = 0
+        var normB: Float = 0
+
+        for i in 0..<a.count {
+            dotProduct += a[i] * b[i]
+            normA += a[i] * a[i]
+            normB += b[i] * b[i]
+        }
+
+        let denominator = sqrt(normA) * sqrt(normB)
+        return denominator > 0 ? dotProduct / denominator : 0
+    }
+
     // MARK: - Private Helpers
 
     /// Formats search results into a context string within token limits.
@@ -294,60 +352,6 @@ public actor VectorMemory: Memory {
         }
 
         return formatted.joined(separator: "\n\n")
-    }
-
-    // MARK: - SIMD-Optimized Vector Operations
-
-    /// Calculates cosine similarity between two vectors.
-    ///
-    /// Uses SIMD-optimized operations via Accelerate on Apple platforms,
-    /// with a portable fallback for other platforms.
-    ///
-    /// - Parameters:
-    ///   - a: First vector.
-    ///   - b: Second vector.
-    /// - Returns: Cosine similarity score between -1 and 1 (1 = identical).
-    public static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
-        guard a.count == b.count, !a.isEmpty else { return 0 }
-
-        #if canImport(Accelerate)
-        return accelerateCosineSimilarity(a, b)
-        #else
-        return fallbackCosineSimilarity(a, b)
-        #endif
-    }
-
-    #if canImport(Accelerate)
-    /// SIMD-optimized cosine similarity using Accelerate framework.
-    private static func accelerateCosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
-        var dotProduct: Float = 0
-        var normA: Float = 0
-        var normB: Float = 0
-
-        // Use vDSP for vectorized operations
-        vDSP_dotpr(a, 1, b, 1, &dotProduct, vDSP_Length(a.count))
-        vDSP_dotpr(a, 1, a, 1, &normA, vDSP_Length(a.count))
-        vDSP_dotpr(b, 1, b, 1, &normB, vDSP_Length(b.count))
-
-        let denominator = sqrt(normA) * sqrt(normB)
-        return denominator > 0 ? dotProduct / denominator : 0
-    }
-    #endif
-
-    /// Portable fallback cosine similarity implementation.
-    private static func fallbackCosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
-        var dotProduct: Float = 0
-        var normA: Float = 0
-        var normB: Float = 0
-
-        for i in 0..<a.count {
-            dotProduct += a[i] * b[i]
-            normA += a[i] * a[i]
-            normB += b[i] * b[i]
-        }
-
-        let denominator = sqrt(normA) * sqrt(normB)
-        return denominator > 0 ? dotProduct / denominator : 0
     }
 }
 
@@ -388,14 +392,11 @@ public struct VectorMemoryDiagnostics: Sendable {
     public let newestTimestamp: Date?
 }
 
-// MARK: - VectorMemory Configuration Builder
+// MARK: - VectorMemoryBuilder
 
 /// Builder for fluent VectorMemory configuration.
 public struct VectorMemoryBuilder: Sendable {
-    private var embeddingProvider: (any EmbeddingProvider)?
-    private var similarityThreshold: Float = 0.7
-    private var maxResults: Int = 10
-    private var tokenEstimator: any TokenEstimator = CharacterBasedTokenEstimator.shared
+    // MARK: Public
 
     /// Creates a new vector memory builder.
     public init() {}
@@ -456,24 +457,33 @@ public struct VectorMemoryBuilder: Sendable {
             tokenEstimator: tokenEstimator
         )
     }
+
+    // MARK: Private
+
+    private var embeddingProvider: (any EmbeddingProvider)?
+    private var similarityThreshold: Float = 0.7
+    private var maxResults: Int = 10
+    private var tokenEstimator: any TokenEstimator = CharacterBasedTokenEstimator.shared
 }
 
-// MARK: - VectorMemory Errors
+// MARK: - VectorMemoryError
 
 /// Errors specific to VectorMemory operations.
 public enum VectorMemoryError: Error, Sendable, CustomStringConvertible {
+    // MARK: Public
+
+    public var description: String {
+        switch self {
+        case .missingEmbeddingProvider:
+            "VectorMemory requires an EmbeddingProvider"
+        case let .searchFailed(error):
+            "Search failed: \(error.localizedDescription)"
+        }
+    }
+
     /// Embedding provider was not configured.
     case missingEmbeddingProvider
 
     /// Search failed due to embedding error.
     case searchFailed(underlying: any Error & Sendable)
-
-    public var description: String {
-        switch self {
-        case .missingEmbeddingProvider:
-            return "VectorMemory requires an EmbeddingProvider"
-        case let .searchFailed(error):
-            return "Search failed: \(error.localizedDescription)"
-        }
-    }
 }

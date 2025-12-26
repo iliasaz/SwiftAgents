@@ -30,8 +30,6 @@ public typealias ToolOutputValidationHandler = @Sendable (ToolGuardrailData, Sen
 /// )
 /// ```
 public struct ToolGuardrailData: Sendable {
-    // MARK: - Properties
-
     /// The tool being validated.
     public let tool: any Tool
 
@@ -164,13 +162,10 @@ public protocol ToolOutputGuardrail: Sendable {
 /// }
 /// ```
 public struct ClosureToolInputGuardrail: ToolInputGuardrail {
-    // MARK: - Properties
+    // MARK: Public
 
     /// The unique name of this guardrail.
     public let name: String
-
-    /// The validation handler.
-    private let handler: @Sendable (ToolGuardrailData) async throws -> GuardrailResult
 
     // MARK: - Initialization
 
@@ -197,6 +192,11 @@ public struct ClosureToolInputGuardrail: ToolInputGuardrail {
     public func validate(_ data: ToolGuardrailData) async throws -> GuardrailResult {
         try await handler(data)
     }
+
+    // MARK: Private
+
+    /// The validation handler.
+    private let handler: @Sendable (ToolGuardrailData) async throws -> GuardrailResult
 }
 
 // MARK: - ClosureToolOutputGuardrail
@@ -219,13 +219,10 @@ public struct ClosureToolInputGuardrail: ToolInputGuardrail {
 /// }
 /// ```
 public struct ClosureToolOutputGuardrail: ToolOutputGuardrail {
-    // MARK: - Properties
+    // MARK: Public
 
     /// The unique name of this guardrail.
     public let name: String
-
-    /// The validation handler.
-    private let handler: @Sendable (ToolGuardrailData, SendableValue) async throws -> GuardrailResult
 
     // MARK: - Initialization
 
@@ -254,6 +251,11 @@ public struct ClosureToolOutputGuardrail: ToolOutputGuardrail {
     public func validate(_ data: ToolGuardrailData, output: SendableValue) async throws -> GuardrailResult {
         try await handler(data, output)
     }
+
+    // MARK: Private
+
+    /// The validation handler.
+    private let handler: @Sendable (ToolGuardrailData, SendableValue) async throws -> GuardrailResult
 }
 
 // MARK: - ToolInputGuardrailBuilder
@@ -281,13 +283,7 @@ public struct ClosureToolOutputGuardrail: ToolOutputGuardrail {
 /// - Multiple calls to `.validate()` - the last handler wins
 /// - Fluent chaining for readability
 public struct ToolInputGuardrailBuilder: Sendable {
-    // MARK: - Private Properties
-
-    /// The current name being built.
-    private let currentName: String?
-
-    /// The current validation handler being built.
-    private let currentHandler: (@Sendable (ToolGuardrailData) async throws -> GuardrailResult)?
+    // MARK: Public
 
     // MARK: - Initialization
 
@@ -300,15 +296,6 @@ public struct ToolInputGuardrailBuilder: Sendable {
     public init() {
         currentName = nil
         currentHandler = nil
-    }
-
-    /// Private initializer for builder chaining.
-    private init(
-        name: String?,
-        handler: (@Sendable (ToolGuardrailData) async throws -> GuardrailResult)?
-    ) {
-        currentName = name
-        currentHandler = handler
     }
 
     // MARK: - Builder Methods
@@ -375,6 +362,25 @@ public struct ToolInputGuardrailBuilder: Sendable {
 
         return ClosureToolInputGuardrail(name: finalName, handler: finalHandler)
     }
+
+    // MARK: Private
+
+    // MARK: - Private Properties
+
+    /// The current name being built.
+    private let currentName: String?
+
+    /// The current validation handler being built.
+    private let currentHandler: (@Sendable (ToolGuardrailData) async throws -> GuardrailResult)?
+
+    /// Private initializer for builder chaining.
+    private init(
+        name: String?,
+        handler: (@Sendable (ToolGuardrailData) async throws -> GuardrailResult)?
+    ) {
+        currentName = name
+        currentHandler = handler
+    }
 }
 
 // MARK: - ToolOutputGuardrailBuilder
@@ -402,13 +408,7 @@ public struct ToolInputGuardrailBuilder: Sendable {
 /// - Multiple calls to `.validate()` - the last handler wins
 /// - Fluent chaining for readability
 public struct ToolOutputGuardrailBuilder: Sendable {
-    // MARK: - Private Properties
-
-    /// The current name being built.
-    private let currentName: String?
-
-    /// The current validation handler being built.
-    private let currentHandler: (@Sendable (ToolGuardrailData, SendableValue) async throws -> GuardrailResult)?
+    // MARK: Public
 
     // MARK: - Initialization
 
@@ -421,15 +421,6 @@ public struct ToolOutputGuardrailBuilder: Sendable {
     public init() {
         currentName = nil
         currentHandler = nil
-    }
-
-    /// Private initializer for builder chaining.
-    private init(
-        name: String?,
-        handler: (@Sendable (ToolGuardrailData, SendableValue) async throws -> GuardrailResult)?
-    ) {
-        currentName = name
-        currentHandler = handler
     }
 
     // MARK: - Builder Methods
@@ -498,5 +489,24 @@ public struct ToolOutputGuardrailBuilder: Sendable {
         let finalHandler = currentHandler ?? { _, _ in .passed() }
 
         return ClosureToolOutputGuardrail(name: finalName, handler: finalHandler)
+    }
+
+    // MARK: Private
+
+    // MARK: - Private Properties
+
+    /// The current name being built.
+    private let currentName: String?
+
+    /// The current validation handler being built.
+    private let currentHandler: (@Sendable (ToolGuardrailData, SendableValue) async throws -> GuardrailResult)?
+
+    /// Private initializer for builder chaining.
+    private init(
+        name: String?,
+        handler: (@Sendable (ToolGuardrailData, SendableValue) async throws -> GuardrailResult)?
+    ) {
+        currentName = name
+        currentHandler = handler
     }
 }

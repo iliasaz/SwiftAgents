@@ -21,7 +21,7 @@ final class MockRouteAgent: Agent, @unchecked Sendable {
         self.instructions = instructions
     }
 
-    func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    func run(_ input: String, hooks _: (any RunHooks)? = nil) async throws -> AgentResult {
         AgentResult(
             output: "\(name) processed: \(input)",
             toolCalls: [],
@@ -33,7 +33,7 @@ final class MockRouteAgent: Agent, @unchecked Sendable {
         )
     }
 
-    nonisolated func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated func stream(_ input: String, hooks _: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
         Task { @Sendable [weak self] in
             guard let self else {

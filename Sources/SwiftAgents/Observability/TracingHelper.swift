@@ -7,6 +7,8 @@
 
 import Foundation
 
+// MARK: - TracingHelper
+
 /// Helper for standardized trace event emission across agents
 ///
 /// TracingHelper provides a consistent interface for emitting trace events
@@ -26,6 +28,8 @@ import Foundation
 /// }
 /// ```
 public struct TracingHelper: Sendable {
+    // MARK: Public
+
     /// The underlying tracer (may be nil for no-op behavior)
     public let tracer: (any Tracer)?
 
@@ -35,9 +39,6 @@ public struct TracingHelper: Sendable {
     /// Name of the agent being traced
     public let agentName: String
 
-    /// Start time of the traced operation
-    private let startTime: ContinuousClock.Instant
-
     /// Creates a new tracing helper
     ///
     /// - Parameters:
@@ -45,9 +46,9 @@ public struct TracingHelper: Sendable {
     ///   - agentName: The name of the agent for trace identification
     public init(tracer: (any Tracer)?, agentName: String) {
         self.tracer = tracer
-        self.traceId = UUID()
+        traceId = UUID()
         self.agentName = agentName
-        self.startTime = .now
+        startTime = .now
     }
 
     // MARK: - Lifecycle Events
@@ -341,6 +342,11 @@ public struct TracingHelper: Sendable {
             agentName: agentName
         ))
     }
+
+    // MARK: Private
+
+    /// Start time of the traced operation
+    private let startTime: ContinuousClock.Instant
 }
 
 // MARK: - Duration Extension

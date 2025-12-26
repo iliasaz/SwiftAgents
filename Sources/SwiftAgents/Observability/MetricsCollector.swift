@@ -208,9 +208,9 @@ public actor MetricsCollector: Tracer {
     ///
     /// - Parameter maxMetricsHistory: Maximum number of duration samples to retain.
     ///   When exceeded, oldest samples are discarded. Default: 10,000.
-    public init(maxMetricsHistory: Int = 10_000) {
+    public init(maxMetricsHistory: Int = 10000) {
         self.maxMetricsHistory = maxMetricsHistory
-        self.executionDurations = CircularBuffer<TimeInterval>(capacity: maxMetricsHistory)
+        executionDurations = CircularBuffer<TimeInterval>(capacity: maxMetricsHistory)
     }
 
     // MARK: - AgentTracer Protocol
@@ -259,13 +259,12 @@ public actor MetricsCollector: Tracer {
 
         case .toolResult:
             if let toolName = event.toolName {
-                let duration: TimeInterval?
-                if let eventDuration = event.duration {
-                    duration = eventDuration
+                let duration: TimeInterval? = if let eventDuration = event.duration {
+                    eventDuration
                 } else if let startTime = spanStartTimes[event.spanId] {
-                    duration = event.timestamp.timeIntervalSince(startTime)
+                    event.timestamp.timeIntervalSince(startTime)
                 } else {
-                    duration = nil
+                    nil
                 }
 
                 if let duration {

@@ -29,7 +29,7 @@ actor MockSupervisorTestAgent: Agent {
         self.instructions = instructions.isEmpty ? "I am \(name)" : instructions
     }
 
-    func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    func run(_ input: String, hooks _: (any RunHooks)? = nil) async throws -> AgentResult {
         runCallCount += 1
         lastInput = input
 
@@ -39,7 +39,7 @@ actor MockSupervisorTestAgent: Agent {
         return builder.build()
     }
 
-    nonisolated func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated func stream(_ input: String, hooks _: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
         Task { @Sendable [weak self] in
             guard let self else {
@@ -478,11 +478,11 @@ struct SupervisorAgentFallbackTests {
             nonisolated var memory: (any Memory)? { nil }
             nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
-            func run(_: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+            func run(_: String, hooks _: (any RunHooks)? = nil) async throws -> AgentResult {
                 throw AgentError.internalError(reason: "Test error")
             }
 
-            nonisolated func stream(_: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+            nonisolated func stream(_: String, hooks _: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
                 AsyncThrowingStream { $0.finish(throwing: AgentError.internalError(reason: "Test error")) }
             }
 
@@ -566,7 +566,7 @@ struct SupervisorAgentToolCallTests {
             nonisolated var memory: (any Memory)? { nil }
             nonisolated var inferenceProvider: (any InferenceProvider)? { nil }
 
-            func run(_: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+            func run(_: String, hooks _: (any RunHooks)? = nil) async throws -> AgentResult {
                 let builder = AgentResult.Builder()
                 builder.start()
                 builder.setOutput("Result with tools")
@@ -585,7 +585,7 @@ struct SupervisorAgentToolCallTests {
                 return builder.build()
             }
 
-            nonisolated func stream(_: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+            nonisolated func stream(_: String, hooks _: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
                 AsyncThrowingStream { $0.finish() }
             }
 

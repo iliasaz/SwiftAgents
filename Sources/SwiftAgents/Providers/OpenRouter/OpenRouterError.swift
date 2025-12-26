@@ -13,20 +13,20 @@ public struct SendableErrorWrapper: Sendable, Equatable, CustomStringConvertible
     /// The error description extracted from the original error.
     public let errorDescription: String
 
+    public var description: String {
+        errorDescription
+    }
+
     /// Creates a wrapper from any error.
     /// - Parameter error: The error to wrap.
     public init(_ error: any Error) {
-        self.errorDescription = error.localizedDescription
+        errorDescription = error.localizedDescription
     }
 
     /// Creates a wrapper from an error description string.
     /// - Parameter description: The error description.
     public init(description: String) {
-        self.errorDescription = description
-    }
-
-    public var description: String {
-        errorDescription
+        errorDescription = description
     }
 }
 
@@ -94,7 +94,7 @@ public enum OpenRouterProviderError: Error, Sendable, Equatable {
     case emptyPrompt
 }
 
-// MARK: - LocalizedError
+// MARK: LocalizedError
 
 extension OpenRouterProviderError: LocalizedError {
     public var errorDescription: String? {
@@ -156,10 +156,10 @@ extension OpenRouterProviderError: LocalizedError {
 
 // MARK: - AgentError Conversion
 
-extension OpenRouterProviderError {
+public extension OpenRouterProviderError {
     /// Converts this provider error to a generic AgentError.
     /// - Returns: The corresponding AgentError.
-    public func toAgentError() -> AgentError {
+    func toAgentError() -> AgentError {
         switch self {
         case .invalidResponse:
             return .generationFailed(reason: "Invalid response from OpenRouter API")
@@ -215,14 +215,14 @@ extension OpenRouterProviderError {
 
 // MARK: - Factory Methods
 
-extension OpenRouterProviderError {
+public extension OpenRouterProviderError {
     /// Creates an error from an HTTP status code and response body.
     /// - Parameters:
     ///   - statusCode: The HTTP status code.
     ///   - body: The response body data, if available.
     ///   - headers: The HTTP response headers, if available.
     /// - Returns: The corresponding OpenRouterProviderError.
-    public static func fromHTTPStatus(
+    static func fromHTTPStatus(
         _ statusCode: Int,
         body: Data?,
         headers: [AnyHashable: Any]? = nil
@@ -272,7 +272,7 @@ extension OpenRouterProviderError {
             var retryAfter: TimeInterval? = nil
 
             // First check HTTP headers (standard Retry-After header)
-            if let headers = headers {
+            if let headers {
                 for (key, value) in headers {
                     if let keyStr = key as? String,
                        keyStr.lowercased() == "retry-after",
@@ -307,7 +307,8 @@ extension OpenRouterProviderError {
         case 504:
             return .timeout(duration: .seconds(60))
 
-        case 500, 505...599:
+        case 500,
+             505...599:
             if errorMessage.lowercased().contains("provider") {
                 return .providerUnavailable(providers: ["unknown"])
             }
@@ -321,37 +322,37 @@ extension OpenRouterProviderError {
     /// Creates an error from a URLError.
     /// - Parameter urlError: The URLError to convert.
     /// - Returns: The corresponding OpenRouterProviderError.
-    public static func fromURLError(_ urlError: URLError) -> OpenRouterProviderError {
+    static func fromURLError(_ urlError: URLError) -> OpenRouterProviderError {
         switch urlError.code {
         case .cancelled:
-            return .cancelled
+            .cancelled
 
         case .timedOut:
             // URLError doesn't provide duration, use a default
-            return .timeout(duration: .seconds(60))
+            .timeout(duration: .seconds(60))
 
-        case .notConnectedToInternet,
-             .networkConnectionLost,
+        case .cannotConnectToHost,
              .cannotFindHost,
-             .cannotConnectToHost,
-             .dnsLookupFailed:
-            return .networkError(SendableErrorWrapper(urlError))
+             .dnsLookupFailed,
+             .networkConnectionLost,
+             .notConnectedToInternet:
+            .networkError(SendableErrorWrapper(urlError))
 
         case .userAuthenticationRequired:
-            return .authenticationFailed
+            .authenticationFailed
 
-        case .cannotDecodeRawData,
-             .cannotDecodeContentData,
+        case .cannotDecodeContentData,
+             .cannotDecodeRawData,
              .cannotParseResponse:
-            return .decodingError(SendableErrorWrapper(urlError))
+            .decodingError(SendableErrorWrapper(urlError))
 
         default:
-            return .networkError(SendableErrorWrapper(urlError))
+            .networkError(SendableErrorWrapper(urlError))
         }
     }
 }
 
-// MARK: - CustomDebugStringConvertible
+// MARK: CustomDebugStringConvertible
 
 extension OpenRouterProviderError: CustomDebugStringConvertible {
     public var debugDescription: String {

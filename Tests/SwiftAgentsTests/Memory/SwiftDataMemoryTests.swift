@@ -115,7 +115,7 @@
         // MARK: - Context Retrieval Tests
 
         @Test("Gets context within token limit")
-        func testGetContext() async throws {
+        func getContext() async throws {
             let memory = try makeInMemoryMemory()
 
             await memory.add(.user("Hello"))

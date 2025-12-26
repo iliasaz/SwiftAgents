@@ -73,7 +73,7 @@ public struct OrchestrationBuilder {
 
     /// Builds an array from nested arrays (for loops).
     public static func buildArray(_ components: [[OrchestrationStep]]) -> [OrchestrationStep] {
-        components.flatMap { $0 }
+        components.flatMap(\.self)
     }
 
     /// Converts an agent into an orchestration step.
@@ -103,8 +103,6 @@ public struct OrchestrationBuilder {
 /// }
 /// ```
 public struct AgentStep: OrchestrationStep {
-    // MARK: Public
-
     /// The agent to execute.
     public let agent: any Agent
 
@@ -161,8 +159,6 @@ public struct Sequential: OrchestrationStep {
         case custom(@Sendable (AgentResult) -> String)
     }
 
-    // MARK: Public
-
     /// The steps to execute sequentially.
     public let steps: [OrchestrationStep]
 
@@ -177,7 +173,7 @@ public struct Sequential: OrchestrationStep {
         transformer: OutputTransformer = .passthrough,
         @OrchestrationBuilder _ content: () -> [OrchestrationStep]
     ) {
-        self.steps = content()
+        steps = content()
         self.transformer = transformer
     }
 
@@ -284,8 +280,6 @@ public struct Parallel: OrchestrationStep {
         case custom(@Sendable ([(String, AgentResult)]) -> String)
     }
 
-    // MARK: Public
-
     /// The named agents to execute in parallel.
     public let agents: [(String, any Agent)]
 
@@ -305,8 +299,8 @@ public struct Parallel: OrchestrationStep {
         maxConcurrency: Int? = nil,
         @ParallelBuilder _ content: () -> [(String, any Agent)]
     ) {
-        self.agents = content()
-        self.mergeStrategy = merge
+        agents = content()
+        mergeStrategy = merge
         self.maxConcurrency = maxConcurrency
     }
 
@@ -441,8 +435,6 @@ public struct ParallelBuilder {
 /// }
 /// ```
 public struct Router: OrchestrationStep {
-    // MARK: Public
-
     /// The routes to evaluate in order.
     public let routes: [RouteDefinition]
 
@@ -457,8 +449,8 @@ public struct Router: OrchestrationStep {
         fallback: (any Agent)? = nil,
         @RouterBuilder _ content: () -> [RouteDefinition]
     ) {
-        self.routes = content()
-        self.fallbackAgent = fallback
+        routes = content()
+        fallbackAgent = fallback
     }
 
     public func execute(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
@@ -587,7 +579,7 @@ public struct RouterBuilder {
 
     /// Builds an array from nested arrays.
     public static func buildArray(_ components: [[RouteDefinition]]) -> [RouteDefinition] {
-        components.flatMap { $0 }
+        components.flatMap(\.self)
     }
 
     /// Passes through a route definition.
@@ -610,8 +602,6 @@ public struct RouterBuilder {
 /// }
 /// ```
 public struct Transform: OrchestrationStep {
-    // MARK: Public
-
     /// The transformation function to apply.
     public let transformer: @Sendable (String) async throws -> String
 
@@ -621,7 +611,7 @@ public struct Transform: OrchestrationStep {
         self.transformer = transformer
     }
 
-    public func execute(_ input: String, hooks: (any RunHooks)?) async throws -> AgentResult {
+    public func execute(_ input: String, hooks _: (any RunHooks)?) async throws -> AgentResult {
         let startTime = ContinuousClock.now
         let output = try await transformer(input)
         let duration = ContinuousClock.now - startTime
@@ -672,15 +662,13 @@ public struct Transform: OrchestrationStep {
 /// let result = try await workflow.run("Process this data")
 /// ```
 public struct Orchestration: Sendable {
-    // MARK: Public
-
     /// The steps in this orchestration.
     public let steps: [OrchestrationStep]
 
     /// Creates a new orchestration.
     /// - Parameter content: A builder closure that produces the orchestration steps.
     public init(@OrchestrationBuilder _ content: () -> [OrchestrationStep]) {
-        self.steps = content()
+        steps = content()
     }
 
     /// Executes the orchestration workflow.

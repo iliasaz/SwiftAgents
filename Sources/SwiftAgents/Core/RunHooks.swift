@@ -28,7 +28,8 @@ import Foundation
 ///         print("Agent started with: \(input)")
 ///     }
 ///
-///     func onToolStart(context: AgentContext?, agent: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {
+///     func onToolStart(context: AgentContext?, agent: any Agent, tool: any Tool, arguments: [String: SendableValue])
+/// async {
 ///         print("Calling tool: \(tool.name)")
 ///     }
 /// }
@@ -123,31 +124,31 @@ public protocol RunHooks: Sendable {
 
 public extension RunHooks {
     /// Default no-op implementation for agent start.
-    func onAgentStart(context: AgentContext?, agent: any Agent, input: String) async {}
+    func onAgentStart(context _: AgentContext?, agent _: any Agent, input _: String) async {}
 
     /// Default no-op implementation for agent end.
-    func onAgentEnd(context: AgentContext?, agent: any Agent, result: AgentResult) async {}
+    func onAgentEnd(context _: AgentContext?, agent _: any Agent, result _: AgentResult) async {}
 
     /// Default no-op implementation for errors.
-    func onError(context: AgentContext?, agent: any Agent, error: Error) async {}
+    func onError(context _: AgentContext?, agent _: any Agent, error _: Error) async {}
 
     /// Default no-op implementation for handoffs.
-    func onHandoff(context: AgentContext?, fromAgent: any Agent, toAgent: any Agent) async {}
+    func onHandoff(context _: AgentContext?, fromAgent _: any Agent, toAgent _: any Agent) async {}
 
     /// Default no-op implementation for tool start.
-    func onToolStart(context: AgentContext?, agent: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {}
+    func onToolStart(context _: AgentContext?, agent _: any Agent, tool _: any Tool, arguments _: [String: SendableValue]) async {}
 
     /// Default no-op implementation for tool end.
-    func onToolEnd(context: AgentContext?, agent: any Agent, tool: any Tool, result: SendableValue) async {}
+    func onToolEnd(context _: AgentContext?, agent _: any Agent, tool _: any Tool, result _: SendableValue) async {}
 
     /// Default no-op implementation for LLM start.
-    func onLLMStart(context: AgentContext?, agent: any Agent, systemPrompt: String?, inputMessages: [MemoryMessage]) async {}
+    func onLLMStart(context _: AgentContext?, agent _: any Agent, systemPrompt _: String?, inputMessages _: [MemoryMessage]) async {}
 
     /// Default no-op implementation for LLM end.
-    func onLLMEnd(context: AgentContext?, agent: any Agent, response: String, usage: InferenceResponse.TokenUsage?) async {}
+    func onLLMEnd(context _: AgentContext?, agent _: any Agent, response _: String, usage _: InferenceResponse.TokenUsage?) async {}
 
     /// Default no-op implementation for guardrail triggered.
-    func onGuardrailTriggered(context: AgentContext?, guardrailName: String, guardrailType: GuardrailType, result: GuardrailResult) async {}
+    func onGuardrailTriggered(context _: AgentContext?, guardrailName _: String, guardrailType _: GuardrailType, result _: GuardrailResult) async {}
 }
 
 // MARK: - CompositeRunHooks
@@ -180,10 +181,7 @@ public extension RunHooks {
 /// )
 /// ```
 public struct CompositeRunHooks: RunHooks {
-    // MARK: - Properties
-
-    /// The hooks to delegate to.
-    private let hooks: [any RunHooks]
+    // MARK: Public
 
     // MARK: - Initialization
 
@@ -285,6 +283,11 @@ public struct CompositeRunHooks: RunHooks {
             }
         }
     }
+
+    // MARK: Private
+
+    /// The hooks to delegate to.
+    private let hooks: [any RunHooks]
 }
 
 // MARK: - LoggingRunHooks
@@ -309,6 +312,8 @@ public struct CompositeRunHooks: RunHooks {
 /// )
 /// ```
 public struct LoggingRunHooks: RunHooks {
+    // MARK: Public
+
     // MARK: - Initialization
 
     /// Creates a new logging hook.
@@ -316,8 +321,8 @@ public struct LoggingRunHooks: RunHooks {
 
     // MARK: - RunHooks Implementation
 
-    public func onAgentStart(context: AgentContext?, agent: any Agent, input: String) async {
-        let contextId = if let context = context {
+    public func onAgentStart(context: AgentContext?, agent _: any Agent, input: String) async {
+        let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
             ""
@@ -326,8 +331,8 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.info("Agent started\(contextId) - input: \"\(truncatedInput)\"")
     }
 
-    public func onAgentEnd(context: AgentContext?, agent: any Agent, result: AgentResult) async {
-        let contextId = if let context = context {
+    public func onAgentEnd(context: AgentContext?, agent _: any Agent, result: AgentResult) async {
+        let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
             ""
@@ -335,8 +340,8 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.info("Agent completed\(contextId) - iterations: \(result.iterationCount), duration: \(result.duration), tools: \(result.toolCalls.count)")
     }
 
-    public func onError(context: AgentContext?, agent: any Agent, error: Error) async {
-        let contextId = if let context = context {
+    public func onError(context: AgentContext?, agent _: any Agent, error: Error) async {
+        let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
             ""
@@ -345,7 +350,7 @@ public struct LoggingRunHooks: RunHooks {
     }
 
     public func onHandoff(context: AgentContext?, fromAgent: any Agent, toAgent: any Agent) async {
-        let contextId = if let context = context {
+        let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
             ""
@@ -355,16 +360,8 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.info("Agent handoff\(contextId) - from: \(fromName) to: \(toName)")
     }
 
-    // MARK: - Private Helpers
-
-    /// Returns a display name for an agent, falling back to type name if configuration name is empty.
-    private func agentDisplayName(_ agent: any Agent) -> String {
-        let name = agent.configuration.name
-        return name.isEmpty ? String(describing: type(of: agent)) : name
-    }
-
-    public func onToolStart(context: AgentContext?, agent: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {
-        let contextId = if let context = context {
+    public func onToolStart(context: AgentContext?, agent _: any Agent, tool: any Tool, arguments: [String: SendableValue]) async {
+        let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
             ""
@@ -372,8 +369,8 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.info("Tool started\(contextId) - name: \(tool.name), args: \(arguments.count) parameter(s)")
     }
 
-    public func onToolEnd(context: AgentContext?, agent: any Agent, tool: any Tool, result: SendableValue) async {
-        let contextId = if let context = context {
+    public func onToolEnd(context: AgentContext?, agent _: any Agent, tool: any Tool, result _: SendableValue) async {
+        let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
             ""
@@ -381,8 +378,8 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.info("Tool completed\(contextId) - name: \(tool.name)")
     }
 
-    public func onLLMStart(context: AgentContext?, agent: any Agent, systemPrompt: String?, inputMessages: [MemoryMessage]) async {
-        let contextId = if let context = context {
+    public func onLLMStart(context: AgentContext?, agent _: any Agent, systemPrompt _: String?, inputMessages: [MemoryMessage]) async {
+        let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
             ""
@@ -390,13 +387,13 @@ public struct LoggingRunHooks: RunHooks {
         Log.agents.info("LLM call started\(contextId) - messages: \(inputMessages.count)")
     }
 
-    public func onLLMEnd(context: AgentContext?, agent: any Agent, response: String, usage: InferenceResponse.TokenUsage?) async {
-        let contextId = if let context = context {
+    public func onLLMEnd(context: AgentContext?, agent _: any Agent, response _: String, usage: InferenceResponse.TokenUsage?) async {
+        let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
             ""
         }
-        let usageInfo = if let usage = usage {
+        let usageInfo = if let usage {
             ", tokens: \(usage.inputTokens) in / \(usage.outputTokens) out"
         } else {
             ""
@@ -405,12 +402,22 @@ public struct LoggingRunHooks: RunHooks {
     }
 
     public func onGuardrailTriggered(context: AgentContext?, guardrailName: String, guardrailType: GuardrailType, result: GuardrailResult) async {
-        let contextId = if let context = context {
+        let contextId = if let context {
             " [context: \(context.executionId)]"
         } else {
             ""
         }
         let message = result.message ?? "No message provided"
         Log.agents.warning("Guardrail triggered\(contextId) - name: \(guardrailName), type: \(guardrailType.rawValue), message: \(message)")
+    }
+
+    // MARK: Private
+
+    // MARK: - Private Helpers
+
+    /// Returns a display name for an agent, falling back to type name if configuration name is empty.
+    private func agentDisplayName(_ agent: any Agent) -> String {
+        let name = agent.configuration.name
+        return name.isEmpty ? String(describing: type(of: agent)) : name
     }
 }

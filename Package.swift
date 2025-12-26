@@ -51,6 +51,10 @@ let package = Package(
         .testTarget(
             name: "SwiftAgentsTests",
             dependencies: ["SwiftAgents"],
+            resources: [
+                .copy("Guardrails/INTEGRATION_TEST_SUMMARY.md"),
+                .copy("Guardrails/QUICK_REFERENCE.md")
+            ],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]

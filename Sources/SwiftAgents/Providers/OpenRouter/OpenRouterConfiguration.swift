@@ -9,6 +9,27 @@ import Foundation
 
 /// Errors that can occur during OpenRouter configuration.
 public enum OpenRouterConfigurationError: Error, Sendable, LocalizedError {
+    // MARK: Public
+
+    public var errorDescription: String? {
+        switch self {
+        case .emptyAPIKey:
+            "OpenRouterConfiguration: apiKey cannot be empty"
+        case .emptyModelIdentifier:
+            "OpenRouterModel: identifier cannot be empty"
+        case let .invalidMaxTokens(value):
+            "OpenRouterConfiguration: maxTokens must be positive, got \(value)"
+        case let .invalidTemperature(value):
+            "OpenRouterConfiguration: temperature must be 0.0-2.0, got \(value)"
+        case let .invalidTopP(value):
+            "OpenRouterConfiguration: topP must be 0.0-1.0, got \(value)"
+        case let .invalidTopK(value):
+            "OpenRouterConfiguration: topK must be positive, got \(value)"
+        case .conflictingProviderPreferences:
+            "OpenRouterProviderPreferences: cannot specify both non-empty allowList and denyList"
+        }
+    }
+
     /// The API key is empty or contains only whitespace.
     case emptyAPIKey
     /// The model identifier is empty or contains only whitespace.
@@ -23,25 +44,6 @@ public enum OpenRouterConfigurationError: Error, Sendable, LocalizedError {
     case invalidTopK(Int)
     /// Both allowList and denyList are specified with non-empty values.
     case conflictingProviderPreferences
-
-    public var errorDescription: String? {
-        switch self {
-        case .emptyAPIKey:
-            return "OpenRouterConfiguration: apiKey cannot be empty"
-        case .emptyModelIdentifier:
-            return "OpenRouterModel: identifier cannot be empty"
-        case .invalidMaxTokens(let value):
-            return "OpenRouterConfiguration: maxTokens must be positive, got \(value)"
-        case .invalidTemperature(let value):
-            return "OpenRouterConfiguration: temperature must be 0.0-2.0, got \(value)"
-        case .invalidTopP(let value):
-            return "OpenRouterConfiguration: topP must be 0.0-1.0, got \(value)"
-        case .invalidTopK(let value):
-            return "OpenRouterConfiguration: topK must be positive, got \(value)"
-        case .conflictingProviderPreferences:
-            return "OpenRouterProviderPreferences: cannot specify both non-empty allowList and denyList"
-        }
-    }
 }
 
 // MARK: - OpenRouterModel
@@ -57,32 +59,6 @@ public enum OpenRouterConfigurationError: Error, Sendable, LocalizedError {
 /// let customModel: OpenRouterModel = "meta-llama/llama-3.1-70b-instruct"
 /// ```
 public struct OpenRouterModel: Sendable, Hashable, ExpressibleByStringLiteral {
-    // MARK: - Properties
-
-    /// The model identifier string.
-    public let identifier: String
-
-    // MARK: - Initialization
-
-    /// Creates a model from a string identifier.
-    /// - Parameter identifier: The OpenRouter model identifier.
-    /// - Throws: `OpenRouterConfigurationError.emptyModelIdentifier` if the identifier is empty.
-    public init(_ identifier: String) throws {
-        let trimmed = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            throw OpenRouterConfigurationError.emptyModelIdentifier
-        }
-        self.identifier = trimmed
-    }
-
-    /// Creates a model from a string literal.
-    public init(stringLiteral value: StringLiteralType) {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        // String literals are compile-time constants, so this is safe
-        precondition(!trimmed.isEmpty, "OpenRouterModel: string literal identifier cannot be empty")
-        self.identifier = trimmed
-    }
-
     // MARK: - Static Presets
 
     /// OpenAI GPT-4o model.
@@ -120,9 +96,33 @@ public struct OpenRouterModel: Sendable, Hashable, ExpressibleByStringLiteral {
 
     /// DeepSeek Coder V2 model.
     public static let deepseekCoder: OpenRouterModel = "deepseek/deepseek-coder"
+
+    /// The model identifier string.
+    public let identifier: String
+
+    // MARK: - Initialization
+
+    /// Creates a model from a string identifier.
+    /// - Parameter identifier: The OpenRouter model identifier.
+    /// - Throws: `OpenRouterConfigurationError.emptyModelIdentifier` if the identifier is empty.
+    public init(_ identifier: String) throws {
+        let trimmed = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw OpenRouterConfigurationError.emptyModelIdentifier
+        }
+        self.identifier = trimmed
+    }
+
+    /// Creates a model from a string literal.
+    public init(stringLiteral value: StringLiteralType) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        // String literals are compile-time constants, so this is safe
+        precondition(!trimmed.isEmpty, "OpenRouterModel: string literal identifier cannot be empty")
+        identifier = trimmed
+    }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension OpenRouterModel: CustomStringConvertible {
     public var description: String {
@@ -142,23 +142,6 @@ extension OpenRouterModel: CustomStringConvertible {
 /// let aggressive = OpenRouterRetryStrategy(maxRetries: 5, baseDelay: 0.5)
 /// ```
 public struct OpenRouterRetryStrategy: Sendable, Equatable {
-    // MARK: - Properties
-
-    /// Maximum number of retry attempts.
-    public let maxRetries: Int
-
-    /// Base delay between retries in seconds.
-    public let baseDelay: TimeInterval
-
-    /// Maximum delay between retries in seconds.
-    public let maxDelay: TimeInterval
-
-    /// Multiplier applied to delay after each retry.
-    public let backoffMultiplier: Double
-
-    /// HTTP status codes that should trigger a retry.
-    public let retryableStatusCodes: Set<Int>
-
     // MARK: - Static Presets
 
     /// Default retry strategy with 3 retries and exponential backoff.
@@ -178,6 +161,21 @@ public struct OpenRouterRetryStrategy: Sendable, Equatable {
         backoffMultiplier: 1.0,
         retryableStatusCodes: []
     )
+
+    /// Maximum number of retry attempts.
+    public let maxRetries: Int
+
+    /// Base delay between retries in seconds.
+    public let baseDelay: TimeInterval
+
+    /// Maximum delay between retries in seconds.
+    public let maxDelay: TimeInterval
+
+    /// Multiplier applied to delay after each retry.
+    public let backoffMultiplier: Double
+
+    /// HTTP status codes that should trigger a retry.
+    public let retryableStatusCodes: Set<Int>
 
     // MARK: - Initialization
 
@@ -230,7 +228,20 @@ public struct OpenRouterRetryStrategy: Sendable, Equatable {
 /// )
 /// ```
 public struct OpenRouterProviderPreferences: Sendable, Equatable, Codable {
-    // MARK: - Properties
+    // MARK: Public
+
+    /// Data collection preference options.
+    public enum DataCollectionPreference: String, Sendable, Codable {
+        case allow
+        case deny
+    }
+
+    /// Provider sorting preference options.
+    public enum SortPreference: String, Sendable, Codable {
+        case price
+        case throughput
+        case latency
+    }
 
     /// Ordered list of preferred providers.
     public let order: [String]?
@@ -253,33 +264,6 @@ public struct OpenRouterProviderPreferences: Sendable, Equatable, Codable {
     /// Maximum price per token (in USD).
     public let maxPrice: Double?
 
-    // MARK: - Nested Types
-
-    /// Data collection preference options.
-    public enum DataCollectionPreference: String, Sendable, Codable {
-        case allow
-        case deny
-    }
-
-    /// Provider sorting preference options.
-    public enum SortPreference: String, Sendable, Codable {
-        case price
-        case throughput
-        case latency
-    }
-
-    // MARK: - CodingKeys
-
-    enum CodingKeys: String, CodingKey {
-        case order
-        case allowList = "allow_list"
-        case denyList = "deny_list"
-        case dataCollection = "data_collection"
-        case allowFallbacks = "allow_fallbacks"
-        case sort
-        case maxPrice = "max_price"
-    }
-
     // MARK: - Initialization
 
     /// Creates provider preferences.
@@ -291,7 +275,8 @@ public struct OpenRouterProviderPreferences: Sendable, Equatable, Codable {
     ///   - allowFallbacks: Whether to allow fallback providers.
     ///   - sort: Sorting preference for provider selection.
     ///   - maxPrice: Maximum price per token in USD.
-    /// - Throws: `OpenRouterConfigurationError.conflictingProviderPreferences` if both allowList and denyList are non-empty.
+    /// - Throws: `OpenRouterConfigurationError.conflictingProviderPreferences` if both allowList and denyList are
+    /// non-empty.
     public init(
         order: [String]? = nil,
         allowList: [String]? = nil,
@@ -313,6 +298,20 @@ public struct OpenRouterProviderPreferences: Sendable, Equatable, Codable {
         self.allowFallbacks = allowFallbacks
         self.sort = sort
         self.maxPrice = maxPrice
+    }
+
+    // MARK: Internal
+
+    // MARK: - CodingKeys
+
+    enum CodingKeys: String, CodingKey {
+        case order
+        case allowList = "allow_list"
+        case denyList = "deny_list"
+        case dataCollection = "data_collection"
+        case allowFallbacks = "allow_fallbacks"
+        case sort
+        case maxPrice = "max_price"
     }
 }
 
@@ -350,151 +349,6 @@ public enum OpenRouterRoutingStrategy: Sendable, Equatable {
 ///     .build()
 /// ```
 public struct OpenRouterConfiguration: Sendable {
-    // MARK: - Properties
-
-    /// OpenRouter API key.
-    public let apiKey: String
-
-    /// The primary model to use.
-    public let model: OpenRouterModel
-
-    /// Base URL for the OpenRouter API.
-    public let baseURL: URL
-
-    /// Request timeout duration.
-    public let timeout: Duration
-
-    /// Maximum tokens to generate.
-    public let maxTokens: Int
-
-    /// System prompt for the model.
-    public let systemPrompt: String?
-
-    /// Temperature for generation (0.0 - 2.0).
-    public let temperature: Double?
-
-    /// Top-p (nucleus) sampling parameter.
-    public let topP: Double?
-
-    /// Top-k sampling parameter.
-    public let topK: Int?
-
-    /// Application name for OpenRouter headers.
-    public let appName: String?
-
-    /// Site URL for OpenRouter headers.
-    public let siteURL: URL?
-
-    /// Provider routing preferences.
-    public let providerPreferences: OpenRouterProviderPreferences?
-
-    /// Fallback models to try if primary fails.
-    public let fallbackModels: [OpenRouterModel]
-
-    /// Routing strategy for fallback models.
-    public let routingStrategy: OpenRouterRoutingStrategy
-
-    /// Retry strategy for failed requests.
-    public let retryStrategy: OpenRouterRetryStrategy
-
-    // MARK: - Default Values
-
-    /// Default base URL for OpenRouter API.
-    // swiftlint:disable:next force_unwrapping
-    public static let defaultBaseURL = URL(string: "https://openrouter.ai/api/v1")!
-
-    /// Default timeout duration.
-    public static let defaultTimeout: Duration = .seconds(120)
-
-    /// Default maximum tokens.
-    public static let defaultMaxTokens: Int = 4096
-
-    // MARK: - Initialization
-
-    /// Creates a new OpenRouter configuration.
-    /// - Parameters:
-    ///   - apiKey: OpenRouter API key.
-    ///   - model: The primary model to use.
-    ///   - baseURL: Base URL for the API. Default: https://openrouter.ai/api/v1
-    ///   - timeout: Request timeout. Default: 120 seconds
-    ///   - maxTokens: Maximum tokens to generate. Default: 4096
-    ///   - systemPrompt: System prompt for the model.
-    ///   - temperature: Temperature for generation (0.0 - 2.0).
-    ///   - topP: Top-p sampling parameter.
-    ///   - topK: Top-k sampling parameter.
-    ///   - appName: Application name for headers.
-    ///   - siteURL: Site URL for headers.
-    ///   - providerPreferences: Provider routing preferences.
-    ///   - fallbackModels: Fallback models on failure.
-    ///   - routingStrategy: Routing strategy for fallbacks. Default: .fallback
-    ///   - retryStrategy: Retry strategy. Default: .default
-    /// - Throws: `OpenRouterConfigurationError` if any validation fails.
-    public init(
-        apiKey: String,
-        model: OpenRouterModel,
-        baseURL: URL = defaultBaseURL,
-        timeout: Duration = defaultTimeout,
-        maxTokens: Int = defaultMaxTokens,
-        systemPrompt: String? = nil,
-        temperature: Double? = nil,
-        topP: Double? = nil,
-        topK: Int? = nil,
-        appName: String? = nil,
-        siteURL: URL? = nil,
-        providerPreferences: OpenRouterProviderPreferences? = nil,
-        fallbackModels: [OpenRouterModel] = [],
-        routingStrategy: OpenRouterRoutingStrategy = .fallback,
-        retryStrategy: OpenRouterRetryStrategy = .default
-    ) throws {
-        // Validate API key
-        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedKey.isEmpty else {
-            throw OpenRouterConfigurationError.emptyAPIKey
-        }
-
-        // Validate maxTokens
-        guard maxTokens > 0 else {
-            throw OpenRouterConfigurationError.invalidMaxTokens(maxTokens)
-        }
-
-        // Validate temperature if provided
-        if let temp = temperature {
-            guard temp >= 0.0 && temp <= 2.0 else {
-                throw OpenRouterConfigurationError.invalidTemperature(temp)
-            }
-        }
-
-        // Validate topP if provided
-        if let top = topP {
-            guard top > 0.0 && top <= 1.0 else {
-                throw OpenRouterConfigurationError.invalidTopP(top)
-            }
-        }
-
-        // Validate topK if provided
-        if let k = topK {
-            guard k > 0 else {
-                throw OpenRouterConfigurationError.invalidTopK(k)
-            }
-        }
-
-        self.apiKey = trimmedKey
-        self.model = model
-        self.baseURL = baseURL
-        self.timeout = timeout
-        self.maxTokens = maxTokens
-        self.systemPrompt = systemPrompt
-        self.temperature = temperature
-        self.topP = topP
-        self.topK = topK
-        self.appName = appName
-        self.siteURL = siteURL
-        self.providerPreferences = providerPreferences
-        self.fallbackModels = fallbackModels
-        self.routingStrategy = routingStrategy
-        self.retryStrategy = retryStrategy
-    }
-
     // MARK: - Builder
 
     /// Builder for creating OpenRouter configurations.
@@ -509,74 +363,25 @@ public struct OpenRouterConfiguration: Sendable {
     ///     .build()
     /// ```
     public struct Builder: Sendable {
-        private let _apiKey: String
-        private let _model: OpenRouterModel
-        private let _baseURL: URL
-        private let _timeout: Duration
-        private let _maxTokens: Int
-        private let _systemPrompt: String?
-        private let _temperature: Double?
-        private let _topP: Double?
-        private let _topK: Int?
-        private let _appName: String?
-        private let _siteURL: URL?
-        private let _providerPreferences: OpenRouterProviderPreferences?
-        private let _fallbackModels: [OpenRouterModel]
-        private let _routingStrategy: OpenRouterRoutingStrategy
-        private let _retryStrategy: OpenRouterRetryStrategy
-
-        /// Private initializer for copy-on-write pattern.
-        private init(
-            apiKey: String,
-            model: OpenRouterModel,
-            baseURL: URL,
-            timeout: Duration,
-            maxTokens: Int,
-            systemPrompt: String?,
-            temperature: Double?,
-            topP: Double?,
-            topK: Int?,
-            appName: String?,
-            siteURL: URL?,
-            providerPreferences: OpenRouterProviderPreferences?,
-            fallbackModels: [OpenRouterModel],
-            routingStrategy: OpenRouterRoutingStrategy,
-            retryStrategy: OpenRouterRetryStrategy
-        ) {
-            self._apiKey = apiKey
-            self._model = model
-            self._baseURL = baseURL
-            self._timeout = timeout
-            self._maxTokens = maxTokens
-            self._systemPrompt = systemPrompt
-            self._temperature = temperature
-            self._topP = topP
-            self._topK = topK
-            self._appName = appName
-            self._siteURL = siteURL
-            self._providerPreferences = providerPreferences
-            self._fallbackModels = fallbackModels
-            self._routingStrategy = routingStrategy
-            self._retryStrategy = retryStrategy
-        }
+        // MARK: Public
 
         /// Creates a new builder with default values.
         public init() {
-            self._apiKey = ""
-            self._model = .gpt4o
-            self._baseURL = OpenRouterConfiguration.defaultBaseURL
-            self._timeout = OpenRouterConfiguration.defaultTimeout
-            self._maxTokens = OpenRouterConfiguration.defaultMaxTokens
-            self._systemPrompt = nil
-            self._temperature = nil
-            self._topP = nil
-            self._topK = nil
-            self._appName = nil
-            self._siteURL = nil
-            self._providerPreferences = nil
-            self._fallbackModels = []
-            self._routingStrategy = .fallback
-            self._retryStrategy = .default
+            _apiKey = ""
+            _model = .gpt4o
+            _baseURL = OpenRouterConfiguration.defaultBaseURL
+            _timeout = OpenRouterConfiguration.defaultTimeout
+            _maxTokens = OpenRouterConfiguration.defaultMaxTokens
+            _systemPrompt = nil
+            _temperature = nil
+            _topP = nil
+            _topK = nil
+            _appName = nil
+            _siteURL = nil
+            _providerPreferences = nil
+            _fallbackModels = []
+            _routingStrategy = .fallback
+            _retryStrategy = .default
         }
 
         /// Sets the API key.
@@ -931,32 +736,228 @@ public struct OpenRouterConfiguration: Sendable {
                 retryStrategy: _retryStrategy
             )
         }
+
+        // MARK: Private
+
+        private let _apiKey: String
+        private let _model: OpenRouterModel
+        private let _baseURL: URL
+        private let _timeout: Duration
+        private let _maxTokens: Int
+        private let _systemPrompt: String?
+        private let _temperature: Double?
+        private let _topP: Double?
+        private let _topK: Int?
+        private let _appName: String?
+        private let _siteURL: URL?
+        private let _providerPreferences: OpenRouterProviderPreferences?
+        private let _fallbackModels: [OpenRouterModel]
+        private let _routingStrategy: OpenRouterRoutingStrategy
+        private let _retryStrategy: OpenRouterRetryStrategy
+
+        /// Private initializer for copy-on-write pattern.
+        private init(
+            apiKey: String,
+            model: OpenRouterModel,
+            baseURL: URL,
+            timeout: Duration,
+            maxTokens: Int,
+            systemPrompt: String?,
+            temperature: Double?,
+            topP: Double?,
+            topK: Int?,
+            appName: String?,
+            siteURL: URL?,
+            providerPreferences: OpenRouterProviderPreferences?,
+            fallbackModels: [OpenRouterModel],
+            routingStrategy: OpenRouterRoutingStrategy,
+            retryStrategy: OpenRouterRetryStrategy
+        ) {
+            _apiKey = apiKey
+            _model = model
+            _baseURL = baseURL
+            _timeout = timeout
+            _maxTokens = maxTokens
+            _systemPrompt = systemPrompt
+            _temperature = temperature
+            _topP = topP
+            _topK = topK
+            _appName = appName
+            _siteURL = siteURL
+            _providerPreferences = providerPreferences
+            _fallbackModels = fallbackModels
+            _routingStrategy = routingStrategy
+            _retryStrategy = retryStrategy
+        }
+    }
+
+    // MARK: - Default Values
+
+    // Default base URL for OpenRouter API.
+    // swiftlint:disable:next force_unwrapping
+    public static let defaultBaseURL = URL(string: "https://openrouter.ai/api/v1")!
+
+    /// Default timeout duration.
+    public static let defaultTimeout: Duration = .seconds(120)
+
+    /// Default maximum tokens.
+    public static let defaultMaxTokens: Int = 4096
+
+    /// OpenRouter API key.
+    public let apiKey: String
+
+    /// The primary model to use.
+    public let model: OpenRouterModel
+
+    /// Base URL for the OpenRouter API.
+    public let baseURL: URL
+
+    /// Request timeout duration.
+    public let timeout: Duration
+
+    /// Maximum tokens to generate.
+    public let maxTokens: Int
+
+    /// System prompt for the model.
+    public let systemPrompt: String?
+
+    /// Temperature for generation (0.0 - 2.0).
+    public let temperature: Double?
+
+    /// Top-p (nucleus) sampling parameter.
+    public let topP: Double?
+
+    /// Top-k sampling parameter.
+    public let topK: Int?
+
+    /// Application name for OpenRouter headers.
+    public let appName: String?
+
+    /// Site URL for OpenRouter headers.
+    public let siteURL: URL?
+
+    /// Provider routing preferences.
+    public let providerPreferences: OpenRouterProviderPreferences?
+
+    /// Fallback models to try if primary fails.
+    public let fallbackModels: [OpenRouterModel]
+
+    /// Routing strategy for fallback models.
+    public let routingStrategy: OpenRouterRoutingStrategy
+
+    /// Retry strategy for failed requests.
+    public let retryStrategy: OpenRouterRetryStrategy
+
+    // MARK: - Initialization
+
+    /// Creates a new OpenRouter configuration.
+    /// - Parameters:
+    ///   - apiKey: OpenRouter API key.
+    ///   - model: The primary model to use.
+    ///   - baseURL: Base URL for the API. Default: https://openrouter.ai/api/v1
+    ///   - timeout: Request timeout. Default: 120 seconds
+    ///   - maxTokens: Maximum tokens to generate. Default: 4096
+    ///   - systemPrompt: System prompt for the model.
+    ///   - temperature: Temperature for generation (0.0 - 2.0).
+    ///   - topP: Top-p sampling parameter.
+    ///   - topK: Top-k sampling parameter.
+    ///   - appName: Application name for headers.
+    ///   - siteURL: Site URL for headers.
+    ///   - providerPreferences: Provider routing preferences.
+    ///   - fallbackModels: Fallback models on failure.
+    ///   - routingStrategy: Routing strategy for fallbacks. Default: .fallback
+    ///   - retryStrategy: Retry strategy. Default: .default
+    /// - Throws: `OpenRouterConfigurationError` if any validation fails.
+    public init(
+        apiKey: String,
+        model: OpenRouterModel,
+        baseURL: URL = defaultBaseURL,
+        timeout: Duration = defaultTimeout,
+        maxTokens: Int = defaultMaxTokens,
+        systemPrompt: String? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        appName: String? = nil,
+        siteURL: URL? = nil,
+        providerPreferences: OpenRouterProviderPreferences? = nil,
+        fallbackModels: [OpenRouterModel] = [],
+        routingStrategy: OpenRouterRoutingStrategy = .fallback,
+        retryStrategy: OpenRouterRetryStrategy = .default
+    ) throws {
+        // Validate API key
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else {
+            throw OpenRouterConfigurationError.emptyAPIKey
+        }
+
+        // Validate maxTokens
+        guard maxTokens > 0 else {
+            throw OpenRouterConfigurationError.invalidMaxTokens(maxTokens)
+        }
+
+        // Validate temperature if provided
+        if let temp = temperature {
+            guard temp >= 0.0, temp <= 2.0 else {
+                throw OpenRouterConfigurationError.invalidTemperature(temp)
+            }
+        }
+
+        // Validate topP if provided
+        if let top = topP {
+            guard top > 0.0, top <= 1.0 else {
+                throw OpenRouterConfigurationError.invalidTopP(top)
+            }
+        }
+
+        // Validate topK if provided
+        if let k = topK {
+            guard k > 0 else {
+                throw OpenRouterConfigurationError.invalidTopK(k)
+            }
+        }
+
+        self.apiKey = trimmedKey
+        self.model = model
+        self.baseURL = baseURL
+        self.timeout = timeout
+        self.maxTokens = maxTokens
+        self.systemPrompt = systemPrompt
+        self.temperature = temperature
+        self.topP = topP
+        self.topK = topK
+        self.appName = appName
+        self.siteURL = siteURL
+        self.providerPreferences = providerPreferences
+        self.fallbackModels = fallbackModels
+        self.routingStrategy = routingStrategy
+        self.retryStrategy = retryStrategy
     }
 }
 
-// MARK: - Equatable
+// MARK: Equatable
 
 extension OpenRouterConfiguration: Equatable {
     public static func == (lhs: OpenRouterConfiguration, rhs: OpenRouterConfiguration) -> Bool {
         lhs.apiKey == rhs.apiKey &&
-        lhs.model == rhs.model &&
-        lhs.baseURL == rhs.baseURL &&
-        lhs.timeout == rhs.timeout &&
-        lhs.maxTokens == rhs.maxTokens &&
-        lhs.systemPrompt == rhs.systemPrompt &&
-        lhs.temperature == rhs.temperature &&
-        lhs.topP == rhs.topP &&
-        lhs.topK == rhs.topK &&
-        lhs.appName == rhs.appName &&
-        lhs.siteURL == rhs.siteURL &&
-        lhs.providerPreferences == rhs.providerPreferences &&
-        lhs.fallbackModels == rhs.fallbackModels &&
-        lhs.routingStrategy == rhs.routingStrategy &&
-        lhs.retryStrategy == rhs.retryStrategy
+            lhs.model == rhs.model &&
+            lhs.baseURL == rhs.baseURL &&
+            lhs.timeout == rhs.timeout &&
+            lhs.maxTokens == rhs.maxTokens &&
+            lhs.systemPrompt == rhs.systemPrompt &&
+            lhs.temperature == rhs.temperature &&
+            lhs.topP == rhs.topP &&
+            lhs.topK == rhs.topK &&
+            lhs.appName == rhs.appName &&
+            lhs.siteURL == rhs.siteURL &&
+            lhs.providerPreferences == rhs.providerPreferences &&
+            lhs.fallbackModels == rhs.fallbackModels &&
+            lhs.routingStrategy == rhs.routingStrategy &&
+            lhs.retryStrategy == rhs.retryStrategy
     }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension OpenRouterConfiguration: CustomStringConvertible {
     public var description: String {

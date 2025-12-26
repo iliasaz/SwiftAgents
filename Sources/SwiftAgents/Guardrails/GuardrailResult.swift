@@ -33,8 +33,6 @@ import Foundation
 /// )
 /// ```
 public struct GuardrailResult: Sendable, Equatable {
-    // MARK: - Properties
-
     /// Indicates whether a tripwire was triggered during the check.
     /// `true` if the guardrail blocked the input/output, `false` if it passed.
     public let tripwireTriggered: Bool
@@ -139,7 +137,7 @@ public struct GuardrailResult: Sendable, Equatable {
     }
 }
 
-// MARK: - CustomDebugStringConvertible
+// MARK: CustomDebugStringConvertible
 
 extension GuardrailResult: CustomDebugStringConvertible {
     public var debugDescription: String {
@@ -148,11 +146,11 @@ extension GuardrailResult: CustomDebugStringConvertible {
         components.append("GuardrailResult(")
         components.append("tripwireTriggered: \(tripwireTriggered)")
 
-        if let message = message {
+        if let message {
             components.append("message: \"\(message)\"")
         }
 
-        if let outputInfo = outputInfo {
+        if let outputInfo {
             components.append("outputInfo: \(outputInfo.debugDescription)")
         }
 

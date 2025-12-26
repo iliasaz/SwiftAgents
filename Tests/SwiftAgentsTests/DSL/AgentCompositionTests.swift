@@ -295,7 +295,7 @@ actor ParallelComposition: Agent {
         self.errorHandling = errorHandling
     }
 
-    func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    func run(_ input: String, hooks _: (any RunHooks)? = nil) async throws -> AgentResult {
         // Run all agents in parallel and collect results
         await withTaskGroup(of: Result<AgentResult, Error>.self) { group in
             for agent in agents {
@@ -562,11 +562,11 @@ struct EmptyAgent: Agent {
     var memory: (any Memory)? { nil }
     var inferenceProvider: (any InferenceProvider)? { nil }
 
-    func run(_: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+    func run(_: String, hooks _: (any RunHooks)? = nil) async throws -> AgentResult {
         AgentResult(output: "", toolCalls: [], toolResults: [], iterationCount: 0, duration: .zero, tokenUsage: nil, metadata: [:])
     }
 
-    nonisolated func stream(_: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated func stream(_: String, hooks _: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             continuation.finish()
         }

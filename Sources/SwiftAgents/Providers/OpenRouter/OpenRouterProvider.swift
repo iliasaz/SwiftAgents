@@ -5,7 +5,7 @@
 
 import Foundation
 #if canImport(FoundationNetworking)
-import FoundationNetworking
+    import FoundationNetworking
 #endif
 
 // MARK: - OpenRouterProvider
@@ -28,16 +28,7 @@ import FoundationNetworking
 /// )
 /// ```
 public actor OpenRouterProvider: InferenceProvider {
-    // MARK: - Properties
-
-    private let configuration: OpenRouterConfiguration
-    private let session: URLSession
-    private let encoder: JSONEncoder
-    private let decoder: JSONDecoder
-    private var rateLimitInfo: OpenRouterRateLimitInfo?
-
-    /// Cached model description for nonisolated access.
-    private let modelDescription: String
+    // MARK: Public
 
     // MARK: - Initialization
 
@@ -45,16 +36,16 @@ public actor OpenRouterProvider: InferenceProvider {
     /// - Parameter configuration: The provider configuration.
     public init(configuration: OpenRouterConfiguration) {
         self.configuration = configuration
-        self.modelDescription = configuration.model.identifier
+        modelDescription = configuration.model.identifier
 
         let sessionConfig = URLSessionConfiguration.default
         sessionConfig.timeoutIntervalForRequest = configuration.timeout.timeInterval
         sessionConfig.timeoutIntervalForResource = configuration.timeout.timeInterval * 2
-        self.session = URLSession(configuration: sessionConfig)
+        session = URLSession(configuration: sessionConfig)
 
-        self.encoder = JSONEncoder()
-        self.decoder = JSONDecoder()
-        self.decoder.keyDecodingStrategy = .convertFromSnakeCase
+        encoder = JSONEncoder()
+        decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
     }
 
     /// Creates an OpenRouter provider with an API key and model.
@@ -140,7 +131,7 @@ public actor OpenRouterProvider: InferenceProvider {
     ///   - prompt: The input prompt.
     ///   - options: Generation options.
     /// - Returns: An async stream of response tokens.
-    public nonisolated func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
+    nonisolated public func stream(prompt: String, options: InferenceOptions) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -259,6 +250,17 @@ public actor OpenRouterProvider: InferenceProvider {
         throw AgentError.generationFailed(reason: "Max retries exceeded")
     }
 
+    // MARK: Private
+
+    private let configuration: OpenRouterConfiguration
+    private let session: URLSession
+    private let encoder: JSONEncoder
+    private let decoder: JSONDecoder
+    private var rateLimitInfo: OpenRouterRateLimitInfo?
+
+    /// Cached model description for nonisolated access.
+    private let modelDescription: String
+
     // MARK: - Private Methods
 
     private func performStream(
@@ -278,98 +280,98 @@ public actor OpenRouterProvider: InferenceProvider {
 
             do {
                 #if canImport(FoundationNetworking)
-                // Linux: Use data(for:) and manual line splitting
-                let (data, response) = try await session.data(for: request)
+                    // Linux: Use data(for:) and manual line splitting
+                    let (data, response) = try await session.data(for: request)
 
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    throw AgentError.generationFailed(reason: "Invalid response type")
-                }
-
-                // Update rate limit info
-                rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
-
-                // Handle HTTP errors
-                if httpResponse.statusCode != 200 {
-                    try handleHTTPError(statusCode: httpResponse.statusCode, data: data, attempt: attempt, maxRetries: maxRetries)
-                    continue
-                }
-
-                // Process SSE stream by splitting data into lines
-                guard let responseString = String(data: data, encoding: .utf8) else {
-                    throw AgentError.generationFailed(reason: "Invalid UTF-8 data")
-                }
-
-                let lines = responseString.components(separatedBy: .newlines)
-                for line in lines {
-                    try Task.checkCancellation()
-
-                    guard line.hasPrefix("data: ") else { continue }
-                    let jsonString = String(line.dropFirst(6))
-
-                    if jsonString == "[DONE]" {
-                        continuation.finish()
-                        return
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        throw AgentError.generationFailed(reason: "Invalid response type")
                     }
 
-                    guard let jsonData = jsonString.data(using: .utf8) else { continue }
+                    // Update rate limit info
+                    rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
 
-                    do {
-                        let chunk = try decoder.decode(OpenRouterStreamChunk.self, from: jsonData)
-                        if let content = chunk.choices?.first?.delta?.content {
-                            continuation.yield(content)
-                        }
-                    } catch {
-                        // Skip malformed chunks
+                    // Handle HTTP errors
+                    if httpResponse.statusCode != 200 {
+                        try handleHTTPError(statusCode: httpResponse.statusCode, data: data, attempt: attempt, maxRetries: maxRetries)
                         continue
                     }
-                }
+
+                    // Process SSE stream by splitting data into lines
+                    guard let responseString = String(data: data, encoding: .utf8) else {
+                        throw AgentError.generationFailed(reason: "Invalid UTF-8 data")
+                    }
+
+                    let lines = responseString.components(separatedBy: .newlines)
+                    for line in lines {
+                        try Task.checkCancellation()
+
+                        guard line.hasPrefix("data: ") else { continue }
+                        let jsonString = String(line.dropFirst(6))
+
+                        if jsonString == "[DONE]" {
+                            continuation.finish()
+                            return
+                        }
+
+                        guard let jsonData = jsonString.data(using: .utf8) else { continue }
+
+                        do {
+                            let chunk = try decoder.decode(OpenRouterStreamChunk.self, from: jsonData)
+                            if let content = chunk.choices?.first?.delta?.content {
+                                continuation.yield(content)
+                            }
+                        } catch {
+                            // Skip malformed chunks
+                            continue
+                        }
+                    }
                 #else
-                // Apple platforms: Use bytes(for:) with line iterator
-                let (bytes, response) = try await session.bytes(for: request)
+                    /// Apple platforms: Use bytes(for:) with line iterator
+                    let (bytes, response) = try await session.bytes(for: request)
 
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    throw AgentError.generationFailed(reason: "Invalid response type")
-                }
-
-                // Update rate limit info
-                rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
-
-                // Handle HTTP errors by collecting error data
-                if httpResponse.statusCode != 200 {
-                    var errorData = Data()
-                    errorData.reserveCapacity(10000)  // Pre-allocate buffer to avoid reallocations
-                    for try await byte in bytes {
-                        errorData.append(byte)
-                        if errorData.count >= 10000 { break }
-                    }
-                    try handleHTTPError(statusCode: httpResponse.statusCode, data: errorData, attempt: attempt, maxRetries: maxRetries)
-                    continue
-                }
-
-                // Process SSE stream
-                for try await line in bytes.lines {
-                    try Task.checkCancellation()
-
-                    guard line.hasPrefix("data: ") else { continue }
-                    let jsonString = String(line.dropFirst(6))
-
-                    if jsonString == "[DONE]" {
-                        continuation.finish()
-                        return
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        throw AgentError.generationFailed(reason: "Invalid response type")
                     }
 
-                    guard let jsonData = jsonString.data(using: String.Encoding.utf8) else { continue }
+                    // Update rate limit info
+                    rateLimitInfo = OpenRouterRateLimitInfo.parse(from: httpResponse.allHeaderFields)
 
-                    do {
-                        let chunk = try decoder.decode(OpenRouterStreamChunk.self, from: jsonData)
-                        if let content = chunk.choices?.first?.delta?.content {
-                            continuation.yield(content)
+                    // Handle HTTP errors by collecting error data
+                    if httpResponse.statusCode != 200 {
+                        var errorData = Data()
+                        errorData.reserveCapacity(10000) // Pre-allocate buffer to avoid reallocations
+                        for try await byte in bytes {
+                            errorData.append(byte)
+                            if errorData.count >= 10000 { break }
                         }
-                    } catch {
-                        // Skip malformed chunks
+                        try handleHTTPError(statusCode: httpResponse.statusCode, data: errorData, attempt: attempt, maxRetries: maxRetries)
                         continue
                     }
-                }
+
+                    // Process SSE stream
+                    for try await line in bytes.lines {
+                        try Task.checkCancellation()
+
+                        guard line.hasPrefix("data: ") else { continue }
+                        let jsonString = String(line.dropFirst(6))
+
+                        if jsonString == "[DONE]" {
+                            continuation.finish()
+                            return
+                        }
+
+                        guard let jsonData = jsonString.data(using: String.Encoding.utf8) else { continue }
+
+                        do {
+                            let chunk = try decoder.decode(OpenRouterStreamChunk.self, from: jsonData)
+                            if let content = chunk.choices?.first?.delta?.content {
+                                continuation.yield(content)
+                            }
+                        } catch {
+                            // Skip malformed chunks
+                            continue
+                        }
+                    }
                 #endif
 
                 continuation.finish()
@@ -447,13 +449,12 @@ public actor OpenRouterProvider: InferenceProvider {
     }
 
     private func handleHTTPError(statusCode: Int, data: Data, attempt: Int, maxRetries: Int) throws {
-        let errorMessage: String
-        if let errorResponse = try? decoder.decode(OpenRouterErrorResponse.self, from: data) {
-            errorMessage = errorResponse.error.message
+        let errorMessage: String = if let errorResponse = try? decoder.decode(OpenRouterErrorResponse.self, from: data) {
+            errorResponse.error.message
         } else if let rawMessage = String(data: data, encoding: .utf8) {
-            errorMessage = rawMessage
+            rawMessage
         } else {
-            errorMessage = "Unknown error"
+            "Unknown error"
         }
 
         switch statusCode {
@@ -468,10 +469,10 @@ public actor OpenRouterProvider: InferenceProvider {
             throw AgentError.modelNotAvailable(model: configuration.model.identifier)
         default:
             // Use configured retryable status codes
-            if configuration.retryStrategy.retryableStatusCodes.contains(statusCode) && attempt < maxRetries {
+            if configuration.retryStrategy.retryableStatusCodes.contains(statusCode), attempt < maxRetries {
                 return // Will retry
             }
-            if statusCode >= 500 && statusCode < 600 {
+            if statusCode >= 500, statusCode < 600 {
                 throw AgentError.inferenceProviderUnavailable(reason: "Server error: \(errorMessage)")
             }
             throw AgentError.generationFailed(reason: "HTTP \(statusCode): \(errorMessage)")
@@ -483,16 +484,17 @@ public actor OpenRouterProvider: InferenceProvider {
         case "tool_calls": .toolCall
         case "length": .maxTokens
         case "content_filter": .contentFilter
-        case "stop", nil: .completed
+        case nil,
+             "stop": .completed
         default: .completed
         }
     }
 }
 
-// MARK: - CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension OpenRouterProvider: CustomStringConvertible {
-    public nonisolated var description: String {
+    nonisolated public var description: String {
         "OpenRouterProvider(model: \(modelDescription))"
     }
 }

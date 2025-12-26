@@ -147,7 +147,6 @@ public macro Parameter(
 
 // MARK: - @Agent Macro
 
-
 /// Generates a complete Agent implementation from an actor with a process() method.
 ///
 /// ## Parameters

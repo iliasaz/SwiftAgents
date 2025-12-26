@@ -5,7 +5,7 @@
 
 import Foundation
 
-// MARK: - Result Builder
+// MARK: - ToolChainBuilder
 
 /// A result builder for composing tool execution chains.
 ///
@@ -92,7 +92,7 @@ public struct ToolChainBuilder {
     }
 }
 
-// MARK: - Chain Step Protocol
+// MARK: - ToolChainStep
 
 /// A step in a tool execution chain.
 ///
@@ -117,7 +117,7 @@ public protocol ToolChainStep: Sendable {
 
 // MARK: - Tool Extension
 
-extension Tool {
+public extension Tool {
     /// Executes this tool as a chain step.
     ///
     /// Automatically converts the input to tool arguments:
@@ -127,18 +127,17 @@ extension Tool {
     /// - Parameter input: The input value from the previous step.
     /// - Returns: The tool's execution result.
     /// - Throws: Tool execution errors.
-    public func execute(input: SendableValue) async throws -> SendableValue {
-        let arguments: [String: SendableValue]
-        if let dict = input.dictionaryValue {
-            arguments = dict
+    func execute(input: SendableValue) async throws -> SendableValue {
+        let arguments: [String: SendableValue] = if let dict = input.dictionaryValue {
+            dict
         } else {
-            arguments = ["input": input]
+            ["input": input]
         }
         return try await execute(arguments: arguments)
     }
 }
 
-// MARK: - Tool Step
+// MARK: - ToolStep
 
 /// A tool wrapper with retry, timeout, and fallback capabilities.
 ///
@@ -152,13 +151,7 @@ extension Tool {
 ///     .fallback(to: CachedSearchTool())
 /// ```
 public struct ToolStep: ToolChainStep, Sendable {
-    // MARK: - Properties
-
-    private let tool: any Tool
-    private let retryCount: Int
-    private let retryDelay: Duration
-    private let timeoutDuration: Duration?
-    private let fallbackTool: (any Tool)?
+    // MARK: Public
 
     // MARK: - Initialization
 
@@ -171,20 +164,6 @@ public struct ToolStep: ToolChainStep, Sendable {
         retryDelay = .seconds(1)
         timeoutDuration = nil
         fallbackTool = nil
-    }
-
-    private init(
-        tool: any Tool,
-        retryCount: Int,
-        retryDelay: Duration,
-        timeoutDuration: Duration?,
-        fallbackTool: (any Tool)?
-    ) {
-        self.tool = tool
-        self.retryCount = retryCount
-        self.retryDelay = retryDelay
-        self.timeoutDuration = timeoutDuration
-        self.fallbackTool = fallbackTool
     }
 
     // MARK: - Configuration
@@ -248,10 +227,32 @@ public struct ToolStep: ToolChainStep, Sendable {
     /// - Throws: `ToolChainError` or tool-specific errors.
     public func execute(input: SendableValue) async throws -> SendableValue {
         if let timeout = timeoutDuration {
-            return try await executeWithTimeout(input: input, timeout: timeout)
+            try await executeWithTimeout(input: input, timeout: timeout)
         } else {
-            return try await executeWithRetry(input: input)
+            try await executeWithRetry(input: input)
         }
+    }
+
+    // MARK: Private
+
+    private let tool: any Tool
+    private let retryCount: Int
+    private let retryDelay: Duration
+    private let timeoutDuration: Duration?
+    private let fallbackTool: (any Tool)?
+
+    private init(
+        tool: any Tool,
+        retryCount: Int,
+        retryDelay: Duration,
+        timeoutDuration: Duration?,
+        fallbackTool: (any Tool)?
+    ) {
+        self.tool = tool
+        self.retryCount = retryCount
+        self.retryDelay = retryDelay
+        self.timeoutDuration = timeoutDuration
+        self.fallbackTool = fallbackTool
     }
 
     // MARK: - Private Methods
@@ -260,13 +261,13 @@ public struct ToolStep: ToolChainStep, Sendable {
         try await withThrowingTaskGroup(of: SendableValue.self) { group in
             // Add actual execution task
             group.addTask {
-                try await self.executeWithRetry(input: input)
+                try await executeWithRetry(input: input)
             }
 
             // Add timeout task
             group.addTask {
                 try await Task.sleep(for: timeout)
-                throw ToolChainError.timeout(toolName: self.tool.name, duration: timeout)
+                throw ToolChainError.timeout(toolName: tool.name, duration: timeout)
             }
 
             // First to complete wins
@@ -323,7 +324,7 @@ public struct ToolStep: ToolChainStep, Sendable {
     }
 }
 
-// MARK: - Transform Step
+// MARK: - ToolTransform
 
 /// A transformation step that modifies values in the chain.
 ///
@@ -337,9 +338,7 @@ public struct ToolStep: ToolChainStep, Sendable {
 /// }
 /// ```
 public struct ToolTransform: ToolChainStep, Sendable {
-    // MARK: - Properties
-
-    private let transform: @Sendable (SendableValue) async throws -> SendableValue
+    // MARK: Public
 
     // MARK: - Initialization
 
@@ -360,9 +359,13 @@ public struct ToolTransform: ToolChainStep, Sendable {
     public func execute(input: SendableValue) async throws -> SendableValue {
         try await transform(input)
     }
+
+    // MARK: Private
+
+    private let transform: @Sendable (SendableValue) async throws -> SendableValue
 }
 
-// MARK: - Filter Step
+// MARK: - ToolFilter
 
 /// A filter step that conditionally passes or replaces values.
 ///
@@ -375,10 +378,7 @@ public struct ToolTransform: ToolChainStep, Sendable {
 /// }, defaultValue: .array([]))
 /// ```
 public struct ToolFilter: ToolChainStep, Sendable {
-    // MARK: - Properties
-
-    private let predicate: @Sendable (SendableValue) async throws -> Bool
-    private let defaultValue: SendableValue
+    // MARK: Public
 
     // MARK: - Initialization
 
@@ -406,9 +406,14 @@ public struct ToolFilter: ToolChainStep, Sendable {
         let passes = try await predicate(input)
         return passes ? input : defaultValue
     }
+
+    // MARK: Private
+
+    private let predicate: @Sendable (SendableValue) async throws -> Bool
+    private let defaultValue: SendableValue
 }
 
-// MARK: - Conditional Step
+// MARK: - ToolConditional
 
 /// A conditional step that executes different branches based on a condition.
 ///
@@ -423,11 +428,7 @@ public struct ToolFilter: ToolChainStep, Sendable {
 /// )
 /// ```
 public struct ToolConditional: ToolChainStep, Sendable {
-    // MARK: - Properties
-
-    private let condition: @Sendable (SendableValue) async throws -> Bool
-    private let thenStep: ToolChainStep
-    private let elseStep: ToolChainStep?
+    // MARK: Public
 
     // MARK: - Initialization
 
@@ -466,9 +467,15 @@ public struct ToolConditional: ToolChainStep, Sendable {
             return input
         }
     }
+
+    // MARK: Private
+
+    private let condition: @Sendable (SendableValue) async throws -> Bool
+    private let thenStep: ToolChainStep
+    private let elseStep: ToolChainStep?
 }
 
-// MARK: - Tool Chain Container
+// MARK: - ToolChain
 
 /// A container for a chain of tool execution steps.
 ///
@@ -486,9 +493,7 @@ public struct ToolConditional: ToolChainStep, Sendable {
 /// let result = try await pipeline.execute(.string("Swift patterns"))
 /// ```
 public struct ToolChain: Sendable {
-    // MARK: - Properties
-
-    private let steps: [ToolChainStep]
+    // MARK: Public
 
     // MARK: - Initialization
 
@@ -540,20 +545,17 @@ public struct ToolChain: Sendable {
 
         return currentValue
     }
+
+    // MARK: Private
+
+    private let steps: [ToolChainStep]
 }
 
-// MARK: - Errors
+// MARK: - ToolChainError
 
 /// Errors that can occur during tool chain execution.
 public enum ToolChainError: Error, Sendable, LocalizedError, CustomStringConvertible {
-    /// A tool execution timed out.
-    case timeout(toolName: String, duration: Duration)
-
-    /// A tool execution failed.
-    case executionFailed(toolName: String, reason: String)
-
-    /// The tool chain is empty (has no steps).
-    case emptyChain
+    // MARK: Public
 
     // MARK: - CustomStringConvertible
 
@@ -573,4 +575,13 @@ public enum ToolChainError: Error, Sendable, LocalizedError, CustomStringConvert
     public var errorDescription: String? {
         description
     }
+
+    /// A tool execution timed out.
+    case timeout(toolName: String, duration: Duration)
+
+    /// A tool execution failed.
+    case executionFailed(toolName: String, reason: String)
+
+    /// The tool chain is empty (has no steps).
+    case emptyChain
 }

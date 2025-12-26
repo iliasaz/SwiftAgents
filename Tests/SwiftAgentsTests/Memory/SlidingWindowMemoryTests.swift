@@ -101,7 +101,7 @@ struct SlidingWindowMemoryTests {
     // MARK: - Context Retrieval Tests
 
     @Test("Gets context within token limit")
-    func testGetContext() async {
+    func getContext() async {
         let memory = SlidingWindowMemory()
 
         await memory.add(.user("Hello"))

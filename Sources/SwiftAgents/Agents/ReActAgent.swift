@@ -119,7 +119,7 @@ public actor ReActAgent: Agent {
             _ = resultBuilder.setOutput(output)
 
             // Run output guardrails BEFORE storing in memory
-            try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
+            _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
 
             // Only store output in memory if validation passed
             if let mem = memory {
@@ -569,14 +569,14 @@ public extension ReActAgent {
 
         /// Creates a new builder.
         public init() {
-            self.tools = []
-            self.instructions = ""
-            self.configuration = .default
-            self.memory = nil
-            self.inferenceProvider = nil
-            self.tracer = nil
-            self.inputGuardrails = []
-            self.outputGuardrails = []
+            tools = []
+            instructions = ""
+            configuration = .default
+            memory = nil
+            inferenceProvider = nil
+            tracer = nil
+            inputGuardrails = []
+            outputGuardrails = []
         }
 
         /// Sets the tools.

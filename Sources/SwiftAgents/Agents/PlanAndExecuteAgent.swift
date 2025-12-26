@@ -92,7 +92,7 @@ public struct PlanStep: Sendable, Equatable, Identifiable, Codable {
     }
 }
 
-// MARK: - PlanStep + CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension PlanStep: CustomStringConvertible {
     public var description: String {
@@ -200,7 +200,7 @@ public struct ExecutionPlan: Sendable, Equatable {
     /// - Parameter failedStepId: The ID of the failed step.
     public mutating func skipDependentSteps(of failedStepId: UUID) {
         for index in steps.indices {
-            if steps[index].dependsOn.contains(failedStepId) && steps[index].status == .pending {
+            if steps[index].dependsOn.contains(failedStepId), steps[index].status == .pending {
                 steps[index].status = .skipped
                 steps[index].error = "Skipped due to dependency failure"
                 // Recursively skip steps that depend on this one
@@ -210,7 +210,7 @@ public struct ExecutionPlan: Sendable, Equatable {
     }
 }
 
-// MARK: - ExecutionPlan + CustomStringConvertible
+// MARK: CustomStringConvertible
 
 extension ExecutionPlan: CustomStringConvertible {
     public var description: String {
@@ -246,6 +246,8 @@ extension ExecutionPlan: CustomStringConvertible {
 /// print(result.output)
 /// ```
 public actor PlanAndExecuteAgent: Agent {
+    // MARK: Public
+
     // MARK: - Agent Protocol Properties
 
     nonisolated public let tools: [any Tool]
@@ -262,18 +264,6 @@ public actor PlanAndExecuteAgent: Agent {
 
     /// Maximum number of replan attempts when steps fail.
     nonisolated public let maxReplanAttempts: Int
-
-    // MARK: - Cancellation State
-
-    private enum CancellationState: Sendable {
-        case active
-        case cancelled
-    }
-
-    // MARK: - Internal State
-
-    private var cancellationState: CancellationState = .active
-    private let toolRegistry: ToolRegistry
 
     // MARK: - Initialization
 
@@ -354,7 +344,7 @@ public actor PlanAndExecuteAgent: Agent {
             _ = resultBuilder.setOutput(output)
 
             // Run output guardrails BEFORE storing in memory
-            try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
+            _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
 
             // Only store output in memory if validation passed
             if let mem = memory {
@@ -397,6 +387,36 @@ public actor PlanAndExecuteAgent: Agent {
     public func cancel() async {
         cancellationState = .cancelled
     }
+
+    // MARK: Private
+
+    // MARK: - Cancellation State
+
+    private enum CancellationState: Sendable {
+        case active
+        case cancelled
+    }
+
+    // MARK: - Plan JSON Structures
+
+    /// Decodable structure for plan responses.
+    private struct PlanResponse: Codable {
+        let steps: [StepData]
+    }
+
+    /// Decodable structure for individual step data.
+    private struct StepData: Codable {
+        let stepNumber: Int
+        let description: String
+        let toolName: String?
+        let toolArguments: [String: SendableValue]?
+        let dependsOn: [Int]
+    }
+
+    // MARK: - Internal State
+
+    private var cancellationState: CancellationState = .active
+    private let toolRegistry: ToolRegistry
 
     // MARK: - Plan-and-Execute Loop
 
@@ -634,7 +654,7 @@ public actor PlanAndExecuteAgent: Agent {
                     continue
                 }
 
-                if char == "\"" && !escapeNext {
+                if char == "\"", !escapeNext {
                     inString.toggle()
                     continue
                 }
@@ -655,22 +675,6 @@ public actor PlanAndExecuteAgent: Agent {
 
         // If extraction failed, return original (might still be valid JSON)
         return trimmed
-    }
-
-    // MARK: - Plan JSON Structures
-
-    /// Decodable structure for plan responses.
-    private struct PlanResponse: Codable {
-        let steps: [StepData]
-    }
-
-    /// Decodable structure for individual step data.
-    private struct StepData: Codable {
-        let stepNumber: Int
-        let description: String
-        let toolName: String?
-        let toolArguments: [String: SendableValue]?
-        let dependsOn: [Int]
     }
 
     // MARK: - Step Execution
@@ -919,7 +923,7 @@ public actor PlanAndExecuteAgent: Agent {
     }
 }
 
-// MARK: - PlanAndExecuteAgent.Builder
+// MARK: PlanAndExecuteAgent.Builder
 
 public extension PlanAndExecuteAgent {
     /// Builder for creating PlanAndExecuteAgent instances with a fluent API.

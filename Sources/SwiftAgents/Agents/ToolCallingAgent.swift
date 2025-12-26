@@ -31,6 +31,8 @@ import Foundation
 /// print(result.output)
 /// ```
 public actor ToolCallingAgent: Agent {
+    // MARK: Public
+
     // MARK: - Agent Protocol Properties
 
     nonisolated public let tools: [any Tool]
@@ -42,34 +44,6 @@ public actor ToolCallingAgent: Agent {
     nonisolated public let outputGuardrails: [any OutputGuardrail]
     nonisolated public let tracer: (any Tracer)?
     nonisolated public let guardrailRunnerConfiguration: GuardrailRunnerConfiguration
-
-    // MARK: - Internal State
-
-    private var isCancelled: Bool = false
-    private var currentTask: Task<Void, Never>?
-    private let toolRegistry: ToolRegistry
-
-    // MARK: - Conversation History
-
-    private enum ConversationMessage: Sendable {
-        case system(String)
-        case user(String)
-        case assistant(String)
-        case toolResult(toolName: String, result: String)
-
-        var formatted: String {
-            switch self {
-            case let .system(content):
-                return "[System]: \(content)"
-            case let .user(content):
-                return "[User]: \(content)"
-            case let .assistant(content):
-                return "[Assistant]: \(content)"
-            case let .toolResult(toolName, result):
-                return "[Tool Result - \(toolName)]: \(result)"
-            }
-        }
-    }
 
     // MARK: - Initialization
 
@@ -104,7 +78,7 @@ public actor ToolCallingAgent: Agent {
         self.inputGuardrails = inputGuardrails
         self.outputGuardrails = outputGuardrails
         self.guardrailRunnerConfiguration = guardrailRunnerConfiguration
-        self.toolRegistry = ToolRegistry(tools: tools)
+        toolRegistry = ToolRegistry(tools: tools)
     }
 
     // MARK: - Agent Protocol Methods
@@ -147,7 +121,7 @@ public actor ToolCallingAgent: Agent {
             _ = resultBuilder.setOutput(output)
 
             // Run output guardrails BEFORE storing in memory
-            try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
+            _ = try await runner.runOutputGuardrails(outputGuardrails, output: output, agent: self, context: nil)
 
             // Only store output in memory if validation passed
             if let mem = memory {
@@ -196,6 +170,36 @@ public actor ToolCallingAgent: Agent {
         currentTask?.cancel()
         currentTask = nil
     }
+
+    // MARK: Private
+
+    // MARK: - Conversation History
+
+    private enum ConversationMessage: Sendable {
+        case system(String)
+        case user(String)
+        case assistant(String)
+        case toolResult(toolName: String, result: String)
+
+        var formatted: String {
+            switch self {
+            case let .system(content):
+                "[System]: \(content)"
+            case let .user(content):
+                "[User]: \(content)"
+            case let .assistant(content):
+                "[Assistant]: \(content)"
+            case let .toolResult(toolName, result):
+                "[Tool Result - \(toolName)]: \(result)"
+            }
+        }
+    }
+
+    // MARK: - Internal State
+
+    private var isCancelled: Bool = false
+    private var currentTask: Task<Void, Never>?
+    private let toolRegistry: ToolRegistry
 
     // MARK: - Tool Calling Loop Implementation
 
@@ -357,14 +361,14 @@ public actor ToolCallingAgent: Agent {
 
     private func buildSystemMessage() -> String {
         if instructions.isEmpty {
-            return "You are a helpful AI assistant with access to tools."
+            "You are a helpful AI assistant with access to tools."
         } else {
-            return instructions
+            instructions
         }
     }
 
     private func buildPrompt(from history: [ConversationMessage]) -> String {
-        history.map { $0.formatted }.joined(separator: "\n\n")
+        history.map(\.formatted).joined(separator: "\n\n")
     }
 
     // MARK: - Response Generation
@@ -403,7 +407,7 @@ public actor ToolCallingAgent: Agent {
     }
 }
 
-// MARK: - ToolCallingAgent.Builder
+// MARK: ToolCallingAgent.Builder
 
 public extension ToolCallingAgent {
     /// Builder for creating ToolCallingAgent instances with a fluent API.
@@ -419,17 +423,7 @@ public extension ToolCallingAgent {
     ///     .build()
     /// ```
     struct Builder: Sendable {
-        // MARK: - Properties
-
-        private var _tools: [any Tool] = []
-        private var _instructions: String = ""
-        private var _configuration: AgentConfiguration = .default
-        private var _memory: (any Memory)?
-        private var _inferenceProvider: (any InferenceProvider)?
-        private var _tracer: (any Tracer)?
-        private var _inputGuardrails: [any InputGuardrail] = []
-        private var _outputGuardrails: [any OutputGuardrail] = []
-        private var _guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default
+        // MARK: Public
 
         // MARK: - Initialization
 
@@ -582,6 +576,18 @@ public extension ToolCallingAgent {
                 guardrailRunnerConfiguration: _guardrailRunnerConfiguration
             )
         }
+
+        // MARK: Private
+
+        private var _tools: [any Tool] = []
+        private var _instructions: String = ""
+        private var _configuration: AgentConfiguration = .default
+        private var _memory: (any Memory)?
+        private var _inferenceProvider: (any InferenceProvider)?
+        private var _tracer: (any Tracer)?
+        private var _inputGuardrails: [any InputGuardrail] = []
+        private var _outputGuardrails: [any OutputGuardrail] = []
+        private var _guardrailRunnerConfiguration: GuardrailRunnerConfiguration = .default
     }
 }
 

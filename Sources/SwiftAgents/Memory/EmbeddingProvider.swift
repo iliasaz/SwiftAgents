@@ -7,6 +7,8 @@
 
 import Foundation
 
+// MARK: - EmbeddingProvider
+
 /// Protocol for embedding text into vectors for semantic search
 ///
 /// Embedding providers convert text into dense vector representations
@@ -33,6 +35,15 @@ import Foundation
 /// }
 /// ```
 public protocol EmbeddingProvider: Sendable {
+    /// The dimensionality of embeddings produced by this provider
+    ///
+    /// All embeddings from this provider will have this many dimensions.
+    /// Common values: 384, 768, 1024, 1536, 3072
+    var dimensions: Int { get }
+
+    /// Optional: The model identifier used for embeddings
+    var modelIdentifier: String { get }
+
     /// Embed a single text into a vector
     ///
     /// - Parameter text: The text to embed
@@ -49,20 +60,14 @@ public protocol EmbeddingProvider: Sendable {
     /// - Returns: Array of embedding vectors (same order as input)
     /// - Throws: `EmbeddingError` if any embedding fails
     func embed(_ texts: [String]) async throws -> [[Float]]
-
-    /// The dimensionality of embeddings produced by this provider
-    ///
-    /// All embeddings from this provider will have this many dimensions.
-    /// Common values: 384, 768, 1024, 1536, 3072
-    var dimensions: Int { get }
-
-    /// Optional: The model identifier used for embeddings
-    var modelIdentifier: String { get }
 }
 
 // MARK: - Default Implementations
 
 public extension EmbeddingProvider {
+    /// Default model identifier
+    var modelIdentifier: String { "unknown" }
+
     /// Default batch implementation - sequential embedding
     ///
     /// Override this for providers that support native batch operations.
@@ -78,38 +83,13 @@ public extension EmbeddingProvider {
 
         return results
     }
-
-    /// Default model identifier
-    var modelIdentifier: String { "unknown" }
 }
 
-// MARK: - Embedding Errors
+// MARK: - EmbeddingError
 
 /// Errors specific to embedding operations
 public enum EmbeddingError: Error, Sendable, CustomStringConvertible {
-    /// The embedding model is not available
-    case modelUnavailable(reason: String)
-
-    /// Embedding dimensions don't match expected
-    case dimensionMismatch(expected: Int, got: Int)
-
-    /// Input text is empty or invalid
-    case emptyInput
-
-    /// Batch size exceeds provider limits
-    case batchTooLarge(size: Int, limit: Int)
-
-    /// Network or API error
-    case networkError(underlying: any Error & Sendable)
-
-    /// Rate limit exceeded
-    case rateLimitExceeded(retryAfter: TimeInterval?)
-
-    /// Invalid API key or authentication failure
-    case authenticationFailed
-
-    /// Generic embedding failure
-    case embeddingFailed(reason: String)
+    // MARK: Public
 
     public var description: String {
         switch self {
@@ -134,9 +114,33 @@ public enum EmbeddingError: Error, Sendable, CustomStringConvertible {
             return "Embedding failed: \(reason)"
         }
     }
+
+    /// The embedding model is not available
+    case modelUnavailable(reason: String)
+
+    /// Embedding dimensions don't match expected
+    case dimensionMismatch(expected: Int, got: Int)
+
+    /// Input text is empty or invalid
+    case emptyInput
+
+    /// Batch size exceeds provider limits
+    case batchTooLarge(size: Int, limit: Int)
+
+    /// Network or API error
+    case networkError(underlying: any Error & Sendable)
+
+    /// Rate limit exceeded
+    case rateLimitExceeded(retryAfter: TimeInterval?)
+
+    /// Invalid API key or authentication failure
+    case authenticationFailed
+
+    /// Generic embedding failure
+    case embeddingFailed(reason: String)
 }
 
-// MARK: - Mock Embedding Provider (for testing)
+// MARK: - MockEmbeddingProvider
 
 /// A mock embedding provider for testing purposes
 ///
@@ -178,7 +182,7 @@ public struct MockEmbeddingProvider: EmbeddingProvider {
     }
 }
 
-// MARK: - Embedding Utilities
+// MARK: - EmbeddingUtils
 
 /// Utility functions for working with embeddings
 public enum EmbeddingUtils {

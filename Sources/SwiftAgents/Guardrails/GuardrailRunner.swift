@@ -31,7 +31,13 @@ import Foundation
 /// )
 /// ```
 public struct GuardrailRunnerConfiguration: Sendable, Equatable {
-    // MARK: - Properties
+    // MARK: - Static Configurations
+
+    /// Default configuration: sequential execution, stop on first tripwire.
+    public static let `default` = GuardrailRunnerConfiguration()
+
+    /// Parallel configuration: concurrent execution, stop on first tripwire.
+    public static let parallel = GuardrailRunnerConfiguration(runInParallel: true)
 
     /// Whether to run guardrails in parallel using TaskGroup.
     /// - `false`: Run guardrails sequentially in order (default)
@@ -64,14 +70,6 @@ public struct GuardrailRunnerConfiguration: Sendable, Equatable {
         self.runInParallel = runInParallel
         self.stopOnFirstTripwire = stopOnFirstTripwire
     }
-
-    // MARK: - Static Configurations
-
-    /// Default configuration: sequential execution, stop on first tripwire.
-    public static let `default` = GuardrailRunnerConfiguration()
-
-    /// Parallel configuration: concurrent execution, stop on first tripwire.
-    public static let parallel = GuardrailRunnerConfiguration(runInParallel: true)
 }
 
 // MARK: - GuardrailExecutionResult
@@ -94,25 +92,11 @@ public struct GuardrailRunnerConfiguration: Sendable, Equatable {
 /// }
 /// ```
 public struct GuardrailExecutionResult: Sendable, Equatable {
-    // MARK: - Properties
-
     /// The name of the guardrail that executed.
     public let guardrailName: String
 
     /// The result from the guardrail.
     public let result: GuardrailResult
-
-    // MARK: - Initialization
-
-    /// Creates a guardrail execution result.
-    ///
-    /// - Parameters:
-    ///   - guardrailName: The name of the guardrail.
-    ///   - result: The guardrail result.
-    public init(guardrailName: String, result: GuardrailResult) {
-        self.guardrailName = guardrailName
-        self.result = result
-    }
 
     // MARK: - Convenience Properties
 
@@ -124,6 +108,18 @@ public struct GuardrailExecutionResult: Sendable, Equatable {
     /// Whether this execution passed without triggering.
     public var passed: Bool {
         !result.tripwireTriggered
+    }
+
+    // MARK: - Initialization
+
+    /// Creates a guardrail execution result.
+    ///
+    /// - Parameters:
+    ///   - guardrailName: The name of the guardrail.
+    ///   - result: The guardrail result.
+    public init(guardrailName: String, result: GuardrailResult) {
+        self.guardrailName = guardrailName
+        self.result = result
     }
 }
 
@@ -167,7 +163,7 @@ public struct GuardrailExecutionResult: Sendable, Equatable {
 /// }
 /// ```
 public actor GuardrailRunner {
-    // MARK: - Properties
+    // MARK: Public
 
     /// The configuration controlling execution behavior.
     public let configuration: GuardrailRunnerConfiguration
@@ -203,9 +199,9 @@ public actor GuardrailRunner {
         context: AgentContext?
     ) async throws -> [GuardrailExecutionResult] {
         if configuration.runInParallel {
-            return try await runInputGuardrailsParallel(guardrails, input: input, context: context)
+            try await runInputGuardrailsParallel(guardrails, input: input, context: context)
         } else {
-            return try await runInputGuardrailsSequential(guardrails, input: input, context: context)
+            try await runInputGuardrailsSequential(guardrails, input: input, context: context)
         }
     }
 
@@ -233,9 +229,9 @@ public actor GuardrailRunner {
         context: AgentContext?
     ) async throws -> [GuardrailExecutionResult] {
         if configuration.runInParallel {
-            return try await runOutputGuardrailsParallel(guardrails, output: output, agent: agent, context: context)
+            try await runOutputGuardrailsParallel(guardrails, output: output, agent: agent, context: context)
         } else {
-            return try await runOutputGuardrailsSequential(guardrails, output: output, agent: agent, context: context)
+            try await runOutputGuardrailsSequential(guardrails, output: output, agent: agent, context: context)
         }
     }
 
@@ -259,9 +255,9 @@ public actor GuardrailRunner {
         data: ToolGuardrailData
     ) async throws -> [GuardrailExecutionResult] {
         if configuration.runInParallel {
-            return try await runToolInputGuardrailsParallel(guardrails, data: data)
+            try await runToolInputGuardrailsParallel(guardrails, data: data)
         } else {
-            return try await runToolInputGuardrailsSequential(guardrails, data: data)
+            try await runToolInputGuardrailsSequential(guardrails, data: data)
         }
     }
 
@@ -287,11 +283,13 @@ public actor GuardrailRunner {
         output: SendableValue
     ) async throws -> [GuardrailExecutionResult] {
         if configuration.runInParallel {
-            return try await runToolOutputGuardrailsParallel(guardrails, data: data, output: output)
+            try await runToolOutputGuardrailsParallel(guardrails, data: data, output: output)
         } else {
-            return try await runToolOutputGuardrailsSequential(guardrails, data: data, output: output)
+            try await runToolOutputGuardrailsSequential(guardrails, data: data, output: output)
         }
     }
+
+    // MARK: Private
 
     // MARK: - Private Sequential Execution
 
@@ -313,7 +311,7 @@ public actor GuardrailRunner {
                 )
                 results.append(executionResult)
 
-                if result.tripwireTriggered && configuration.stopOnFirstTripwire {
+                if result.tripwireTriggered, configuration.stopOnFirstTripwire {
                     throw GuardrailError.inputTripwireTriggered(
                         guardrailName: guardrail.name,
                         message: result.message,
@@ -361,7 +359,7 @@ public actor GuardrailRunner {
                 )
                 results.append(executionResult)
 
-                if result.tripwireTriggered && configuration.stopOnFirstTripwire {
+                if result.tripwireTriggered, configuration.stopOnFirstTripwire {
                     throw GuardrailError.outputTripwireTriggered(
                         guardrailName: guardrail.name,
                         agentName: agent.configuration.name,
@@ -409,7 +407,7 @@ public actor GuardrailRunner {
                 )
                 results.append(executionResult)
 
-                if result.tripwireTriggered && configuration.stopOnFirstTripwire {
+                if result.tripwireTriggered, configuration.stopOnFirstTripwire {
                     throw GuardrailError.toolInputTripwireTriggered(
                         guardrailName: guardrail.name,
                         toolName: data.tool.name,
@@ -458,7 +456,7 @@ public actor GuardrailRunner {
                 )
                 results.append(executionResult)
 
-                if result.tripwireTriggered && configuration.stopOnFirstTripwire {
+                if result.tripwireTriggered, configuration.stopOnFirstTripwire {
                     throw GuardrailError.toolOutputTripwireTriggered(
                         guardrailName: guardrail.name,
                         toolName: data.tool.name,
@@ -524,7 +522,7 @@ public actor GuardrailRunner {
 
             // Collect results
             for try await executionResult in group {
-                if executionResult.result.tripwireTriggered && configuration.stopOnFirstTripwire {
+                if executionResult.result.tripwireTriggered, configuration.stopOnFirstTripwire {
                     // Cancel remaining tasks
                     group.cancelAll()
                     throw GuardrailError.inputTripwireTriggered(
@@ -585,7 +583,7 @@ public actor GuardrailRunner {
 
             // Collect results
             for try await executionResult in group {
-                if executionResult.result.tripwireTriggered && configuration.stopOnFirstTripwire {
+                if executionResult.result.tripwireTriggered, configuration.stopOnFirstTripwire {
                     // Cancel remaining tasks
                     group.cancelAll()
                     throw GuardrailError.outputTripwireTriggered(
@@ -646,7 +644,7 @@ public actor GuardrailRunner {
 
             // Collect results
             for try await executionResult in group {
-                if executionResult.result.tripwireTriggered && configuration.stopOnFirstTripwire {
+                if executionResult.result.tripwireTriggered, configuration.stopOnFirstTripwire {
                     // Cancel remaining tasks
                     group.cancelAll()
                     throw GuardrailError.toolInputTripwireTriggered(
@@ -708,7 +706,7 @@ public actor GuardrailRunner {
 
             // Collect results
             for try await executionResult in group {
-                if executionResult.result.tripwireTriggered && configuration.stopOnFirstTripwire {
+                if executionResult.result.tripwireTriggered, configuration.stopOnFirstTripwire {
                     // Cancel remaining tasks
                     group.cancelAll()
                     throw GuardrailError.toolOutputTripwireTriggered(

@@ -8,19 +8,19 @@ import Foundation
 @testable import SwiftAgents
 import Testing
 
-// MARK: - Test Helpers
+// MARK: - MockGuardrailAgent
 
 /// Mock agent for guardrail testing
-fileprivate actor MockGuardrailAgent: Agent {
+private actor MockGuardrailAgent: Agent {
+    // MARK: Internal
+
     nonisolated let tools: [any Tool]
     nonisolated let instructions: String
     nonisolated let configuration: AgentConfiguration
     nonisolated let memory: (any Memory)? = nil
     nonisolated let inferenceProvider: (any InferenceProvider)?
     nonisolated let tracer: (any Tracer)? = nil
-    
-    private let responseHandler: @Sendable (String) async throws -> String
-    
+
     init(
         name: String = "MockAgent",
         tools: [any Tool] = [],
@@ -30,38 +30,41 @@ fileprivate actor MockGuardrailAgent: Agent {
     ) {
         self.tools = tools
         self.instructions = instructions
-        self.configuration = AgentConfiguration(name: name)
+        configuration = AgentConfiguration(name: name)
         self.inferenceProvider = inferenceProvider
         self.responseHandler = responseHandler
     }
-    
-    func run(_ input: String, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
+
+    func run(_ input: String, hooks _: (any RunHooks)? = nil) async throws -> AgentResult {
         let output = try await responseHandler(input)
         return AgentResult(output: output)
     }
 
-    nonisolated func stream(_ input: String, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated func stream(_: String, hooks _: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             continuation.finish()
         }
     }
-    
+
     func cancel() async {}
+
+    // MARK: Private
+
+    private let responseHandler: @Sendable (String) async throws -> String
 }
 
-// MARK: - Integration Test Suite
+// MARK: - GuardrailIntegrationTests
 
 @Suite("Guardrail Integration Tests")
 struct GuardrailIntegrationTests {
-    
     // MARK: - Agent + Input Guardrails
-    
+
     @Test("Agent with input guardrail passed - execution proceeds normally")
-    func testAgentWithInputGuardrailPassed() async throws {
+    func agentWithInputGuardrailPassed() async throws {
         // Given: An agent with a passing input guardrail
         let mockProvider = MockInferenceProvider()
         await mockProvider.setResponses(["Final Answer: Success"])
-        
+
         let agent = await MockGuardrailAgent(
             name: "TestAgent",
             inferenceProvider: mockProvider,
@@ -69,12 +72,12 @@ struct GuardrailIntegrationTests {
                 "Processed: \(input)"
             }
         )
-        
+
         // Input guardrail that always passes
-        let inputGuardrail = ClosureInputGuardrail(name: "always_pass") { input, context in
+        let inputGuardrail = ClosureInputGuardrail(name: "always_pass") { _, _ in
             .passed(message: "Input validation successful")
         }
-        
+
         // When: Running the agent with passing guardrail
         // Note: This test assumes Agent protocol will have inputGuardrails property
         // For now, we test the guardrail runner directly
@@ -86,21 +89,21 @@ struct GuardrailIntegrationTests {
             input: "Test query",
             context: context
         )
-        
+
         // Then: Guardrail passes and agent would run
         #expect(results.count == 1)
         #expect(results[0].guardrailName == "always_pass")
         #expect(results[0].result.tripwireTriggered == false)
         #expect(results[0].result.message == "Input validation successful")
     }
-    
+
     @Test("Agent with input guardrail triggered - execution halts with error")
-    func testAgentWithInputGuardrailTriggered() async throws {
+    func agentWithInputGuardrailTriggered() async throws {
         // Given: An agent with a failing input guardrail
         let agent = await MockGuardrailAgent(name: "TestAgent")
-        
+
         // Input guardrail that triggers on sensitive content
-        let inputGuardrail = ClosureInputGuardrail(name: "sensitive_data_blocker") { input, context in
+        let inputGuardrail = ClosureInputGuardrail(name: "sensitive_data_blocker") { input, _ in
             if input.contains("SSN:") || input.contains("password") {
                 return .tripwire(
                     message: "Sensitive data detected in input",
@@ -112,7 +115,7 @@ struct GuardrailIntegrationTests {
             }
             return .passed()
         }
-        
+
         // When: Running guardrail with sensitive input
         let context = AgentContext(input: "Please process SSN: 123-45-6789")
         let runner = GuardrailRunner()
@@ -126,9 +129,9 @@ struct GuardrailIntegrationTests {
             )
         }
     }
-    
+
     @Test("Agent with multiple input guardrails - executes in order")
-    func testAgentWithMultipleInputGuardrails() async throws {
+    func agentWithMultipleInputGuardrails() async throws {
         // Given: An agent with multiple input guardrails
         let agent = await MockGuardrailAgent(name: "TestAgent")
 
@@ -140,7 +143,7 @@ struct GuardrailIntegrationTests {
 
         let tracker = ExecutionTracker()
 
-        let guardrail1 = ClosureInputGuardrail(name: "length_check") { input, context in
+        let guardrail1 = ClosureInputGuardrail(name: "length_check") { input, _ in
             await tracker.append("length_check")
             if input.count < 5 {
                 return .tripwire(message: "Input too short")
@@ -148,7 +151,7 @@ struct GuardrailIntegrationTests {
             return .passed()
         }
 
-        let guardrail2 = ClosureInputGuardrail(name: "format_check") { input, context in
+        let guardrail2 = ClosureInputGuardrail(name: "format_check") { input, _ in
             await tracker.append("format_check")
             if !input.contains("?") {
                 return .tripwire(message: "Input must be a question")
@@ -165,7 +168,7 @@ struct GuardrailIntegrationTests {
             input: "What is the weather?",
             context: context
         )
-        
+
         // Then: Both guardrails execute in order
         #expect(results.count == 2)
         let executionOrder = await tracker.getOrder()
@@ -173,24 +176,24 @@ struct GuardrailIntegrationTests {
         #expect(results[0].guardrailName == "length_check")
         #expect(results[1].guardrailName == "format_check")
     }
-    
+
     // MARK: - Agent + Output Guardrails
-    
+
     @Test("Agent with output guardrail passed - result returned normally")
-    func testAgentWithOutputGuardrailPassed() async throws {
+    func agentWithOutputGuardrailPassed() async throws {
         // Given: An agent with output guardrail
         let agent = await MockGuardrailAgent(
             name: "OutputAgent",
             responseHandler: { _ in "Safe output content" }
         )
-        
-        let outputGuardrail = ClosureOutputGuardrail(name: "output_validator") { output, agent, context in
+
+        let outputGuardrail = ClosureOutputGuardrail(name: "output_validator") { output, _, _ in
             if output.contains("Safe") {
                 return .passed(message: "Output validated successfully")
             }
             return .tripwire(message: "Output validation failed")
         }
-        
+
         // When: Running output guardrail on valid output
         let result = try await agent.run("test input")
         let context = AgentContext(input: "test input")
@@ -202,22 +205,22 @@ struct GuardrailIntegrationTests {
             agent: agent,
             context: context
         )
-        
+
         // Then: Guardrail passes
         #expect(guardrailResults.count == 1)
         #expect(guardrailResults[0].result.tripwireTriggered == false)
         #expect(guardrailResults[0].guardrailName == "output_validator")
     }
-    
+
     @Test("Agent with output guardrail triggered - throws after execution")
-    func testAgentWithOutputGuardrailTriggered() async throws {
+    func agentWithOutputGuardrailTriggered() async throws {
         // Given: An agent with output guardrail that detects inappropriate content
         let agent = await MockGuardrailAgent(
             name: "OutputAgent",
             responseHandler: { _ in "This content contains profanity: damn" }
         )
-        
-        let outputGuardrail = ClosureOutputGuardrail(name: "profanity_filter") { output, agent, context in
+
+        let outputGuardrail = ClosureOutputGuardrail(name: "profanity_filter") { output, _, _ in
             let profaneWords = ["damn", "hell", "crap"]
             let containsProfanity = profaneWords.contains { output.lowercased().contains($0) }
 
@@ -232,7 +235,7 @@ struct GuardrailIntegrationTests {
             }
             return .passed()
         }
-        
+
         // When: Running output guardrail on inappropriate output
         let result = try await agent.run("test input")
         let context = AgentContext(input: "test input")
@@ -248,11 +251,11 @@ struct GuardrailIntegrationTests {
             )
         }
     }
-    
+
     // MARK: - Tool + Guardrails
-    
+
     @Test("Tool execution with input guardrail - validates arguments before execution")
-    func testToolExecutionWithInputGuardrail() async throws {
+    func toolExecutionWithInputGuardrail() async throws {
         // Given: A tool with input guardrail
         let tool = MockTool(
             name: "calculator",
@@ -261,12 +264,12 @@ struct GuardrailIntegrationTests {
             ],
             result: .string("Result: 42")
         )
-        
+
         let toolInputGuardrail = ClosureToolInputGuardrail(name: "argument_validator") { data in
             guard let expression = data.arguments["expression"]?.stringValue else {
                 return .tripwire(message: "Missing required expression argument")
             }
-            
+
             // Validate no malicious code
             if expression.contains(";") || expression.contains("eval") {
                 return .tripwire(
@@ -276,7 +279,7 @@ struct GuardrailIntegrationTests {
             }
             return .passed()
         }
-        
+
         // When: Running tool guardrail with valid arguments
         let agent = await MockGuardrailAgent(name: "ToolAgent")
         let context = AgentContext(input: "Calculate 2+2")
@@ -286,17 +289,17 @@ struct GuardrailIntegrationTests {
             agent: agent,
             context: context
         )
-        
+
         let runner = GuardrailRunner()
         let results = try await runner.runToolInputGuardrails([toolInputGuardrail], data: data)
-        
+
         // Then: Guardrail passes
         #expect(results.count == 1)
         #expect(results[0].result.tripwireTriggered == false)
     }
-    
+
     @Test("Tool execution with output guardrail - validates result after execution")
-    func testToolExecutionWithOutputGuardrail() async throws {
+    func toolExecutionWithOutputGuardrail() async throws {
         // Given: A tool with output guardrail
         let tool = MockTool(
             name: "web_search",
@@ -307,8 +310,8 @@ struct GuardrailIntegrationTests {
                 ])
             ])
         )
-        
-        let toolOutputGuardrail = ClosureToolOutputGuardrail(name: "result_validator") { data, output in
+
+        let toolOutputGuardrail = ClosureToolOutputGuardrail(name: "result_validator") { _, output in
             // Validate output structure
             guard let dict = output.dictionaryValue else {
                 return .tripwire(message: "Invalid output format")
@@ -331,7 +334,7 @@ struct GuardrailIntegrationTests {
                 outputInfo: .dictionary(["count": .int(results.count)])
             )
         }
-        
+
         // When: Running tool output guardrail
         let agent = await MockGuardrailAgent(name: "SearchAgent")
         let context = AgentContext(input: "Search for Swift")
@@ -345,30 +348,30 @@ struct GuardrailIntegrationTests {
 
         let runner = GuardrailRunner()
         let results = try await runner.runToolOutputGuardrails([toolOutputGuardrail], data: data, output: toolResult)
-        
+
         // Then: Guardrail passes with metadata
         #expect(results.count == 1)
         #expect(results[0].result.tripwireTriggered == false)
         #expect(results[0].result.message == "Results validated")
     }
-    
+
     @Test("ToolRegistry.execute() runs guardrails - full integration")
-    func testToolRegistryWithGuardrails() async throws {
+    func toolRegistryWithGuardrails() async throws {
         // NOTE: This test will require ToolRegistry to be updated with guardrail support
         // For now, we document the expected behavior
-        
+
         // Given: A ToolRegistry with tools that have guardrails
         // When: Executing a tool through the registry
         // Then: Input guardrails run before execution, output guardrails run after
-        
+
         // This test is a placeholder for when ToolRegistry integration is complete
         #expect(true, "ToolRegistry integration pending implementation")
     }
-    
+
     // MARK: - Combined Scenarios
-    
+
     @Test("Agent with both input and output guardrails - full validation flow")
-    func testAgentWithBothInputAndOutputGuardrails() async throws {
+    func agentWithBothInputAndOutputGuardrails() async throws {
         // Given: An agent with both input and output guardrails
         let agent = await MockGuardrailAgent(
             name: "FullyGuardedAgent",
@@ -376,15 +379,15 @@ struct GuardrailIntegrationTests {
                 "Processed and sanitized: \(input)"
             }
         )
-        
-        let inputGuardrail = ClosureInputGuardrail(name: "input_sanitizer") { input, context in
+
+        let inputGuardrail = ClosureInputGuardrail(name: "input_sanitizer") { input, _ in
             if input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return .tripwire(message: "Empty input not allowed")
             }
             return .passed(message: "Input accepted")
         }
 
-        let outputGuardrail = ClosureOutputGuardrail(name: "output_length_checker") { output, agent, context in
+        let outputGuardrail = ClosureOutputGuardrail(name: "output_length_checker") { output, _, _ in
             if output.count > 1000 {
                 return .tripwire(
                     message: "Output too long",
@@ -415,29 +418,29 @@ struct GuardrailIntegrationTests {
             agent: agent,
             context: context
         )
-        
+
         // Then: Both guardrails pass
         #expect(inputResults.count == 1)
         #expect(inputResults[0].result.tripwireTriggered == false)
         #expect(outputResults.count == 1)
         #expect(outputResults[0].result.tripwireTriggered == false)
     }
-    
+
     @Test("Guardrail with agent context - context flows through validation")
-    func testGuardrailWithAgentContext() async throws {
+    func guardrailWithAgentContext() async throws {
         // Given: A guardrail that uses context data
         let agent = await MockGuardrailAgent(name: "ContextAgent")
         let context = AgentContext(input: "Test input")
         await context.set("user_role", value: .string("admin"))
         await context.set("request_count", value: .int(5))
-        
+
         actor ContextCapture {
             var value: AgentContext?
             func set(_ newValue: AgentContext?) { value = newValue }
             func get() -> AgentContext? { value }
         }
         let contextCapture = ContextCapture()
-        let inputGuardrail = ClosureInputGuardrail(name: "role_checker") { input, ctx in
+        let inputGuardrail = ClosureInputGuardrail(name: "role_checker") { _, ctx in
             await contextCapture.set(ctx)
 
             // Check user role from context
@@ -462,26 +465,26 @@ struct GuardrailIntegrationTests {
             input: "Admin command",
             context: context
         )
-        
+
         // Then: Context is accessible in guardrail
         let captured = await contextCapture.get()
         #expect(captured != nil)
         #expect(results[0].result.tripwireTriggered == false)
         #expect(results[0].result.metadata["role"]?.stringValue == "admin")
     }
-    
+
     @Test("Guardrail error propagation - errors bubble up correctly")
-    func testGuardrailErrorPropagation() async throws {
+    func guardrailErrorPropagation() async throws {
         // Given: A guardrail that triggers
         let agent = await MockGuardrailAgent(name: "ErrorAgent")
         let context = AgentContext(input: "Test")
-        
-        let inputGuardrail = ClosureInputGuardrail(name: "error_trigger") { input, context in
+
+        let inputGuardrail = ClosureInputGuardrail(name: "error_trigger") { _, _ in
             .tripwire(
                 message: "Test error message",
                 outputInfo: .dictionary([
                     "errorCode": .string("TEST_001"),
-                    "timestamp": .int(1234567890)
+                    "timestamp": .int(1_234_567_890)
                 ])
             )
         }
@@ -499,7 +502,7 @@ struct GuardrailIntegrationTests {
             Issue.record("Expected GuardrailError to be thrown")
         } catch let error as GuardrailError {
             // Verify error details
-            if case .inputTripwireTriggered(let name, let message, let outputInfo) = error {
+            if case let .inputTripwireTriggered(name, message, outputInfo) = error {
                 #expect(name == "error_trigger")
                 #expect(message == "Test error message")
                 #expect(outputInfo?.dictionaryValue?["errorCode"]?.stringValue == "TEST_001")
@@ -510,20 +513,20 @@ struct GuardrailIntegrationTests {
             Issue.record("Wrong error type: \(error)")
         }
     }
-    
+
     // MARK: - Edge Cases
-    
+
     @Test("Empty guardrail arrays - execution proceeds normally")
-    func testEmptyGuardrailArrays() async throws {
+    func emptyGuardrailArrays() async throws {
         // Given: Agent with no guardrails
         let agent = await MockGuardrailAgent(
             name: "UnguardedAgent",
             responseHandler: { input in "Response: \(input)" }
         )
-        
+
         let context = AgentContext(input: "Test")
         let runner = GuardrailRunner()
-        
+
         // When: Running with empty guardrail arrays
         let inputResults = try await runner.runInputGuardrails(
             [],
@@ -538,20 +541,20 @@ struct GuardrailIntegrationTests {
             agent: agent,
             context: context
         )
-        
+
         // Then: No guardrails run, execution succeeds
         #expect(inputResults.isEmpty)
         #expect(outputResults.isEmpty)
         #expect(result.output == "Response: Test input")
     }
-    
+
     @Test("Guardrail metadata preserved - accessible after validation")
-    func testGuardrailMetadataPreserved() async throws {
+    func guardrailMetadataPreserved() async throws {
         // Given: A guardrail that sets metadata
         let agent = await MockGuardrailAgent(name: "MetadataAgent")
         let context = AgentContext(input: "Test")
-        
-        let inputGuardrail = ClosureInputGuardrail(name: "metadata_setter") { input, context in
+
+        let inputGuardrail = ClosureInputGuardrail(name: "metadata_setter") { input, _ in
             .passed(
                 message: "Validation passed with metadata",
                 metadata: [
@@ -574,7 +577,7 @@ struct GuardrailIntegrationTests {
             input: "Test input",
             context: context
         )
-        
+
         // Then: Metadata is preserved in result
         #expect(results.count == 1)
         let metadata = results[0].result.metadata
@@ -582,21 +585,21 @@ struct GuardrailIntegrationTests {
         #expect(metadata["inputLength"]?.intValue == 10)
         #expect(metadata["checksPerformed"]?.arrayValue?.count == 3)
     }
-    
+
     @Test("Parallel input guardrails - run concurrently")
-    func testParallelInputGuardrails() async throws {
+    func parallelInputGuardrails() async throws {
         // Given: Multiple parallel input guardrails
         let agent = await MockGuardrailAgent(name: "ParallelAgent")
         let context = AgentContext(input: "Test")
 
         let startTime = ContinuousClock.now
 
-        let slowGuardrail1 = ClosureInputGuardrail(name: "slow1") { input, context in
+        let slowGuardrail1 = ClosureInputGuardrail(name: "slow1") { _, _ in
             try? await Task.sleep(for: .milliseconds(100))
             return .passed(message: "Slow check 1 complete")
         }
 
-        let slowGuardrail2 = ClosureInputGuardrail(name: "slow2") { input, context in
+        let slowGuardrail2 = ClosureInputGuardrail(name: "slow2") { _, _ in
             try? await Task.sleep(for: .milliseconds(100))
             return .passed(message: "Slow check 2 complete")
         }
@@ -608,9 +611,9 @@ struct GuardrailIntegrationTests {
             input: "Test input",
             context: context
         )
-        
+
         let duration = ContinuousClock.now - startTime
-        
+
         // Then: Guardrails ran in parallel (total time < sum of individual times)
         #expect(results.count == 2)
         // Should take ~100ms, not ~200ms if sequential
