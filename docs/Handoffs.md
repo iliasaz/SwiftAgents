@@ -112,11 +112,13 @@ let config = HandoffBuilder(to: targetAgent)
 
 ### OnHandoffCallback
 
-Executed just before the handoff occurs. Use for logging, validation, or context updates:
+Executed just before the handoff occurs. Use for logging, side effects, or context updates:
 
 ```swift
 public typealias OnHandoffCallback = @Sendable (AgentContext, HandoffInputData) async throws -> Void
 ```
+
+> **Note**: Errors thrown from this callback are logged but do **not** abort the handoff. For validation that should prevent handoffs, use `IsEnabledCallback` instead.
 
 Example:
 ```swift
@@ -124,13 +126,9 @@ onHandoff: { context, data in
     // Log the handoff
     Log.agents.info("Handoff: \(data.sourceAgentName) -> \(data.targetAgentName)")
 
-    // Update context
+    // Update context before handoff
     await context.set("last_handoff_to", value: .string(data.targetAgentName))
-
-    // Validate (throw to abort)
-    guard await context.get("authorized")?.boolValue == true else {
-        throw AgentError.unauthorized
-    }
+    await context.set("handoff_timestamp", value: .double(Date().timeIntervalSince1970))
 }
 ```
 

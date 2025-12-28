@@ -93,21 +93,21 @@ extension HandoffInputData: CustomStringConvertible {
 
 /// Callback invoked before a handoff is executed.
 ///
-/// Use this callback to log, validate, or perform side effects before
+/// Use this callback to log, perform side effects, or update context before
 /// a handoff occurs. The callback receives the shared `AgentContext`
 /// and the `HandoffInputData` describing the handoff.
 ///
-/// This callback can throw errors to abort the handoff if validation fails.
+/// > Note: Errors thrown from this callback are logged but do **not** abort
+/// > the handoff. For pre-handoff validation that should prevent execution,
+/// > use `IsEnabledCallback` instead, which returns `false` to skip handoffs.
 ///
 /// Example:
 /// ```swift
 /// let onHandoff: OnHandoffCallback = { context, inputData in
 ///     Log.agents.info("Handoff: \(inputData.sourceAgentName) -> \(inputData.targetAgentName)")
 ///
-///     // Validate handoff
-///     guard await context.get("can_handoff")?.boolValue == true else {
-///         throw HandoffError.handoffDisabled
-///     }
+///     // Update context before handoff
+///     await context.set("last_handoff", value: .string(inputData.targetAgentName))
 /// }
 /// ```
 public typealias OnHandoffCallback = @Sendable (AgentContext, HandoffInputData) async throws -> Void
