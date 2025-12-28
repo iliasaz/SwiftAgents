@@ -104,8 +104,28 @@ public struct MCPRequest: Sendable, Codable, Equatable {
         }
         jsonrpc = version
 
-        id = try container.decode(String.self, forKey: .id)
-        method = try container.decode(String.self, forKey: .method)
+        let decodedId = try container.decode(String.self, forKey: .id)
+        guard !decodedId.isEmpty else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: [CodingKeys.id],
+                    debugDescription: "Request ID cannot be empty"
+                )
+            )
+        }
+        id = decodedId
+
+        let decodedMethod = try container.decode(String.self, forKey: .method)
+        guard !decodedMethod.isEmpty else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: [CodingKeys.method],
+                    debugDescription: "Method name cannot be empty"
+                )
+            )
+        }
+        method = decodedMethod
+
         params = try container.decodeIfPresent([String: SendableValue].self, forKey: .params)
     }
 
@@ -179,16 +199,43 @@ public struct MCPResponse: Sendable, Codable, Equatable {
 
     /// Creates a new JSON-RPC 2.0 response.
     ///
+    /// According to JSON-RPC 2.0, a response must contain either a `result`
+    /// (on success) or an `error` (on failure), but not both. This initializer
+    /// enforces this constraint with a precondition.
+    ///
     /// - Parameters:
     ///   - jsonrpc: The protocol version. Should always be "2.0".
     ///   - id: The identifier matching the corresponding request.
     ///   - result: The result of successful execution, or `nil` on error.
     ///   - error: The error object on failure, or `nil` on success.
+    ///
+    /// - Precondition: Exactly one of `result` or `error` must be non-nil.
+    ///   Both being `nil` or both being non-nil violates JSON-RPC 2.0.
     public init(
         jsonrpc: String = "2.0",
         id: String,
         result: SendableValue? = nil,
         error: MCPErrorObject? = nil
+    ) {
+        precondition(
+            (result == nil) != (error == nil),
+            "MCPResponse must have exactly one of result or error set, not both or neither"
+        )
+        self.jsonrpc = jsonrpc
+        self.id = id
+        self.result = result
+        self.error = error
+    }
+
+    /// Internal initializer for decoding that bypasses the precondition.
+    ///
+    /// Used by `init(from:)` which performs its own validation.
+    private init(
+        jsonrpc: String,
+        id: String,
+        result: SendableValue?,
+        error: MCPErrorObject?,
+        skipValidation _: Bool
     ) {
         self.jsonrpc = jsonrpc
         self.id = id
@@ -196,9 +243,38 @@ public struct MCPResponse: Sendable, Codable, Equatable {
         self.error = error
     }
 
-    // MARK: Private
-
     // MARK: - Codable
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        let jsonrpc = try container.decode(String.self, forKey: .jsonrpc)
+        let id = try container.decode(String.self, forKey: .id)
+        let result = try container.decodeIfPresent(SendableValue.self, forKey: .result)
+        let error = try container.decodeIfPresent(MCPErrorObject.self, forKey: .error)
+
+        // Validate JSON-RPC 2.0 mutual exclusivity
+        guard (result == nil) != (error == nil) else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: container.codingPath,
+                    debugDescription: "MCPResponse must have exactly one of result or error, not both or neither"
+                )
+            )
+        }
+
+        self.init(jsonrpc: jsonrpc, id: id, result: result, error: error, skipValidation: true)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(jsonrpc, forKey: .jsonrpc)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(result, forKey: .result)
+        try container.encodeIfPresent(error, forKey: .error)
+    }
+
+    // MARK: Private
 
     private enum CodingKeys: String, CodingKey {
         case jsonrpc

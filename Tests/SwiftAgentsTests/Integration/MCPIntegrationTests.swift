@@ -84,7 +84,7 @@ struct MCPToolBridgeIntegrationTests {
 
     @Test("Bridged tool execution calls server")
     func bridgedToolExecution() async throws {
-        let server = MockMCPServer(name: "exec-server")
+        let server = IntegrationTestMCPServer(name: "exec-server")
         await server.setTools([
             ToolDefinition(name: "search", description: "Search", parameters: [])
         ])

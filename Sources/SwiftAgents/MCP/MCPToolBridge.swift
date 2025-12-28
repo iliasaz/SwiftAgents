@@ -92,6 +92,31 @@ public actor MCPToolBridge {
 /// MCPBridgedTool is `Sendable` and can be safely shared across async contexts.
 /// The underlying MCP server must also be `Sendable` (as required by the
 /// `MCPServer` protocol).
+///
+/// ### Actor Isolation Contract
+///
+/// This struct stores an existential reference (`any MCPServer`) to an actor-isolated
+/// server. While Swift's type system allows this because `MCPServer` requires `Sendable`
+/// conformance, the following guarantees apply:
+///
+/// - **Execution Serialization**: All calls to `execute()` are automatically serialized
+///   by the server's actor isolation, even when invoked concurrently from multiple contexts.
+/// - **No Data Races**: The `definition` property is immutable and `Sendable`. The `server`
+///   reference is safe because actor methods are inherently thread-safe.
+/// - **Concurrent Safety**: Multiple `MCPBridgedTool` instances referencing the same server
+///   can safely execute in parallel; the actor ensures request serialization.
+///
+/// Example of safe concurrent usage:
+/// ```swift
+/// let tools = try await bridge.bridgeTools()
+/// await withTaskGroup(of: SendableValue.self) { group in
+///     for tool in tools {
+///         group.addTask {
+///             try await tool.execute(arguments: ["query": .string("test")])
+///         }
+///     }
+/// }
+/// ```
 struct MCPBridgedTool: Tool, Sendable {
     /// The tool definition from the MCP server.
     let definition: ToolDefinition

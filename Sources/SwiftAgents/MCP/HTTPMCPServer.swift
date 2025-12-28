@@ -291,7 +291,18 @@ public actor HTTPMCPServer: MCPServer {
                 lastError = error
 
                 if attempt == maxRetries {
-                    throw MCPError.internalError("Request failed: \(error.localizedDescription)")
+                    // Preserve detailed error context for debugging
+                    let errorData: [String: SendableValue] = [
+                        "originalError": .string(String(describing: error)),
+                        "errorType": .string(String(describing: type(of: error))),
+                        "attempts": .int(attempt + 1),
+                        "maxRetries": .int(maxRetries)
+                    ]
+                    throw MCPError(
+                        code: MCPError.internalErrorCode,
+                        message: "Request failed after \(maxRetries + 1) attempts: \(error.localizedDescription)",
+                        data: .dictionary(errorData)
+                    )
                 }
 
                 let delay = pow(2.0, Double(attempt))

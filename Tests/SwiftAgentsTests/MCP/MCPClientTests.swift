@@ -536,9 +536,20 @@ struct MCPClientResourceTests {
         let result = try await client.readResource(uri: "file:///found.txt")
         #expect(result.text == "Found content")
 
-        // Verify first server was tried
+        // Verify at least one server was tried (dictionary iteration order is non-deterministic)
+        // The successful server (server2) must have been tried, but server1 may or may not
+        // have been tried depending on iteration order
         let server1History = await server1.readResourceHistory
-        #expect(server1History.contains("file:///found.txt"))
+        let server2History = await server2.readResourceHistory
+
+        // server2 must have been tried since it returned successfully
+        #expect(server2History.contains("file:///found.txt"))
+
+        // If server1 was tried before server2, it would be in history
+        // If server2 was tried first and succeeded, server1 wouldn't be tried
+        // This is correct behavior - we return on first success
+        let totalTries = server1History.count + server2History.count
+        #expect(totalTries >= 1) // At least the successful server was tried
     }
 }
 

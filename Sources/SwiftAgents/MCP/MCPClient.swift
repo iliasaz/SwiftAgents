@@ -310,7 +310,9 @@ public actor MCPClient {
     /// the client is ready for new server connections.
     ///
     /// - Throws: `MCPError` if any server fails to close cleanly.
-    ///           Note that all servers are attempted to close even if some fail.
+    ///           The error includes details about all servers that failed,
+    ///           not just the last one. All servers are attempted to close
+    ///           even if some fail.
     ///
     /// ## Example
     /// ```swift
@@ -319,26 +321,42 @@ public actor MCPClient {
     /// }
     /// // Use client...
     /// ```
+    ///
+    /// ## Error Handling
+    /// If multiple servers fail to close, the thrown error contains aggregated
+    /// failure information in its `data` field for debugging purposes.
     public func closeAll() async throws {
-        var lastError: Error?
+        var errors: [(serverName: String, error: Error)] = []
 
         // Attempt to close all servers
-        for (_, server) in servers {
+        for (name, server) in servers {
             do {
                 try await server.close()
             } catch {
-                lastError = error
+                errors.append((serverName: name, error: error))
             }
         }
 
-        // Clear all state
+        // Always clear state regardless of errors
         servers.removeAll()
         toolCache.removeAll()
         cacheValid = false
 
-        // Re-throw the last error if any occurred
-        if let error = lastError {
-            throw error
+        // Report all errors with detailed context
+        if !errors.isEmpty {
+            let errorDetails = errors.map { "\($0.serverName): \($0.error.localizedDescription)" }
+                .joined(separator: "; ")
+            let failedServers = errors.map { $0.serverName }
+
+            throw MCPError(
+                code: MCPError.internalErrorCode,
+                message: "Failed to close \(errors.count) server(s): \(failedServers.joined(separator: ", "))",
+                data: .dictionary([
+                    "failureCount": .int(errors.count),
+                    "failedServers": .array(failedServers.map { .string($0) }),
+                    "details": .string(errorDetails)
+                ])
+            )
         }
     }
 
