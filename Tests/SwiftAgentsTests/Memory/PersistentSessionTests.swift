@@ -11,8 +11,6 @@
 
     @Suite("PersistentSession Tests")
     struct PersistentSessionTests {
-        // MARK: Internal
-
         // MARK: - Factory Method Tests
 
         @Test("Creates in-memory session with factory method")
@@ -415,6 +413,12 @@
 
             #expect(await session.isEmpty == true)
         }
+    }
+
+    // MARK: - PersistentSessionTests Isolation and Advanced
+
+    extension PersistentSessionTests {
+        // MARK: Internal
 
         // MARK: - Multiple Sessions Isolation Tests
 
@@ -487,7 +491,7 @@
 
             let items = try await session.getAllItems()
             #expect(items.count == 1)
-            #expect(items[0].content == "")
+            #expect(items[0].content.isEmpty)
         }
 
         @Test("Handles messages with special characters")

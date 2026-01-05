@@ -49,6 +49,8 @@ public struct OpenRouterStreamChunk: Decodable, Sendable {
 
     /// A single choice in the streaming response.
     public struct StreamChoice: Decodable, Sendable {
+        // MARK: Public
+
         /// Index of this choice.
         public let index: Int
 
@@ -56,16 +58,27 @@ public struct OpenRouterStreamChunk: Decodable, Sendable {
         public let delta: Delta?
 
         /// Reason the generation finished (if applicable).
-        public let finish_reason: String?
+        public let finishReason: String?
 
         /// Log probabilities (if requested).
         public let logprobs: LogProbs?
+
+        // MARK: Private
+
+        private enum CodingKeys: String, CodingKey {
+            case index
+            case delta
+            case finishReason = "finish_reason"
+            case logprobs
+        }
     }
 
     // MARK: - Delta
 
     /// The incremental content in a streaming chunk.
     public struct Delta: Decodable, Sendable {
+        // MARK: Public
+
         /// Role of the message (usually only in first chunk).
         public let role: String?
 
@@ -73,10 +86,19 @@ public struct OpenRouterStreamChunk: Decodable, Sendable {
         public let content: String?
 
         /// Tool calls being streamed.
-        public let tool_calls: [ToolCallDelta]?
+        public let toolCalls: [ToolCallDelta]?
 
         /// Function call (legacy format).
-        public let function_call: FunctionCallDelta?
+        public let functionCall: FunctionCallDelta?
+
+        // MARK: Private
+
+        private enum CodingKeys: String, CodingKey {
+            case role
+            case content
+            case toolCalls = "tool_calls"
+            case functionCall = "function_call"
+        }
     }
 
     // MARK: - ToolCallDelta
@@ -122,14 +144,24 @@ public struct OpenRouterStreamChunk: Decodable, Sendable {
 
     /// Token usage information.
     public struct StreamUsage: Decodable, Sendable {
+        // MARK: Public
+
         /// Number of tokens in the prompt.
-        public let prompt_tokens: Int
+        public let promptTokens: Int
 
         /// Number of tokens in the completion.
-        public let completion_tokens: Int
+        public let completionTokens: Int
 
         /// Total tokens used.
-        public let total_tokens: Int
+        public let totalTokens: Int
+
+        // MARK: Private
+
+        private enum CodingKeys: String, CodingKey {
+            case promptTokens = "prompt_tokens"
+            case completionTokens = "completion_tokens"
+            case totalTokens = "total_tokens"
+        }
     }
 
     // MARK: - LogProbs
@@ -307,7 +339,7 @@ public struct OpenRouterStreamParser: Sendable {
                 }
 
                 // Extract tool call deltas
-                if let toolCalls = choice.delta?.tool_calls {
+                if let toolCalls = choice.delta?.toolCalls {
                     for toolCall in toolCalls {
                         events.append(.toolCallDelta(
                             index: toolCall.index,
@@ -319,8 +351,8 @@ public struct OpenRouterStreamParser: Sendable {
                 }
 
                 // Extract legacy function call (if present)
-                // Only process legacy function_call if no modern tool_calls exist
-                if choice.delta?.tool_calls == nil, let functionCall = choice.delta?.function_call {
+                // Only process legacy functionCall if no modern toolCalls exist
+                if choice.delta?.toolCalls == nil, let functionCall = choice.delta?.functionCall {
                     events.append(.toolCallDelta(
                         index: 0,
                         id: nil,
@@ -330,7 +362,7 @@ public struct OpenRouterStreamParser: Sendable {
                 }
 
                 // Extract finish reason
-                if let finishReason = choice.finish_reason {
+                if let finishReason = choice.finishReason {
                     events.append(.finishReason(finishReason))
                 }
             }
@@ -339,8 +371,8 @@ public struct OpenRouterStreamParser: Sendable {
         // Extract usage information
         if let usage = chunk.usage {
             events.append(.usage(
-                prompt: usage.prompt_tokens,
-                completion: usage.completion_tokens
+                prompt: usage.promptTokens,
+                completion: usage.completionTokens
             ))
         }
 

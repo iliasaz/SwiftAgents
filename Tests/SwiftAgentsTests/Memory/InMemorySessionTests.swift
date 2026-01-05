@@ -7,6 +7,8 @@ import Foundation
 @testable import SwiftAgents
 import Testing
 
+// MARK: - InMemorySessionTests
+
 @Suite("InMemorySession Tests")
 struct InMemorySessionTests {
     // MARK: - Initialization Tests
@@ -451,7 +453,11 @@ struct InMemorySessionTests {
             #expect(results.allSatisfy { $0 == 3 })
         }
     }
+}
 
+// MARK: - InMemorySessionTests Concurrent and Edge Cases
+
+extension InMemorySessionTests {
     @Test("Handles concurrent writes safely")
     func concurrentWritesSafe() async throws {
         let session = InMemorySession()
@@ -515,7 +521,7 @@ struct InMemorySessionTests {
 
         let items = try await session.getAllItems()
         #expect(items.count == 1)
-        #expect(items[0].content == "")
+        #expect(items[0].content.isEmpty)
     }
 
     @Test("Handles messages with special characters")
