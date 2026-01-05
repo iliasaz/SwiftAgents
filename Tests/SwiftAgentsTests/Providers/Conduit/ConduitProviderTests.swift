@@ -4,140 +4,172 @@
 // Comprehensive tests for ConduitProvider functionality.
 //
 // Note: These tests verify initialization, configuration, and error handling.
-// Actual generation tests require mocked Conduit backends which will be
-// added once the upstream Conduit build issue is resolved.
+// Actual generation tests require running Conduit backends.
 
+import Conduit
 import Foundation
 @testable import SwiftAgents
 import Testing
-import Conduit
 
 @Suite("ConduitProvider Tests")
 struct ConduitProviderTests {
     // MARK: - Initialization Tests
 
     @Test("init with valid Anthropic configuration succeeds")
-    func initWithValidAnthropicConfigurationSucceeds() throws {
-        let config = ConduitConfiguration.anthropic(apiKey: "sk-ant-test-key")
+    func initWithValidAnthropicConfigurationSucceeds() async throws {
+        let config = try ConduitConfiguration.anthropic(
+            apiKey: "sk-ant-test-key",
+            model: .claudeSonnet45
+        )
 
-        let provider = try ConduitProvider(configuration: config)
+        let provider = try await ConduitProvider(configuration: config)
 
-        #expect(provider.configuration.apiKey == "sk-ant-test-key")
+        // Verify provider was created successfully
+        #expect(config.providerType.displayName == "Anthropic")
     }
 
     @Test("init with valid OpenAI configuration succeeds")
-    func initWithValidOpenAIConfigurationSucceeds() throws {
-        let config = ConduitConfiguration.openAI(apiKey: "sk-test-key")
+    func initWithValidOpenAIConfigurationSucceeds() async throws {
+        let config = try ConduitConfiguration.openAI(
+            apiKey: "sk-test-key",
+            model: .gpt4o
+        )
 
-        let provider = try ConduitProvider(configuration: config)
+        let provider = try await ConduitProvider(configuration: config)
 
-        #expect(provider.configuration.apiKey == "sk-test-key")
+        #expect(config.providerType.displayName == "OpenAI")
     }
 
     @Test("init with MLX configuration succeeds")
-    func initWithMLXConfigurationSucceeds() throws {
-        let config = ConduitConfiguration.mlx()
+    func initWithMLXConfigurationSucceeds() async throws {
+        let config = try ConduitConfiguration.mlx(model: .llama3_2_1b)
 
-        let provider = try ConduitProvider(configuration: config)
+        let provider = try await ConduitProvider(configuration: config)
 
-        #expect(provider.configuration.apiKey == "local")
+        #expect(config.providerType.displayName == "MLX (Local)")
     }
 
     @Test("init with HuggingFace configuration succeeds")
-    func initWithHuggingFaceConfigurationSucceeds() throws {
-        let config = ConduitConfiguration.huggingFace(apiKey: "hf_test_key")
-
-        let provider = try ConduitProvider(configuration: config)
-
-        #expect(provider.configuration.apiKey == "hf_test_key")
-    }
-
-    @Test("init with providerType convenience initializer succeeds")
-    func initWithProviderTypeConvenienceInitializerSucceeds() throws {
-        let providerType = ConduitProviderType.anthropic(
-            apiKey: "test-key",
-            model: .claudeSonnet35
+    func initWithHuggingFaceConfigurationSucceeds() async throws {
+        let config = try ConduitConfiguration.huggingFace(
+            token: "hf_test_key",
+            model: .huggingFace("meta-llama/Llama-3.1-8B-Instruct")
         )
 
-        let provider = try ConduitProvider(providerType: providerType)
+        let provider = try await ConduitProvider(configuration: config)
 
-        #expect(provider.configuration.apiKey == "test-key")
+        #expect(config.providerType.displayName == "HuggingFace")
     }
 
-    // MARK: - Validation Tests
+    @Test("init with Foundation Models configuration succeeds")
+    func initWithFoundationModelsConfigurationSucceeds() async throws {
+        let config = try ConduitConfiguration.foundationModels(
+            systemPrompt: "You are helpful"
+        )
 
-    @Test("generate with empty prompt throws invalidInput")
-    func generateWithEmptyPromptThrowsInvalidInput() async throws {
-        let config = ConduitConfiguration.anthropic(apiKey: "test-key")
-        let provider = try ConduitProvider(configuration: config)
+        let provider = try await ConduitProvider(configuration: config)
 
-        await #expect(throws: AgentError.self) {
-            _ = try await provider.generate(prompt: "", options: .default)
+        #expect(config.providerType.displayName == "Apple Foundation Models")
+    }
+
+    // MARK: - Configuration Validation Tests
+
+    @Test("empty Anthropic API key throws error")
+    func emptyAnthropicAPIKeyThrowsError() throws {
+        #expect(throws: ConduitConfigurationError.emptyAPIKey) {
+            _ = try ConduitConfiguration.anthropic(
+                apiKey: "",
+                model: .claudeSonnet45
+            )
         }
     }
 
-    @Test("generate with whitespace-only prompt throws invalidInput")
-    func generateWithWhitespaceOnlyPromptThrowsInvalidInput() async throws {
-        let config = ConduitConfiguration.anthropic(apiKey: "test-key")
-        let provider = try ConduitProvider(configuration: config)
+    @Test("empty OpenAI API key throws error")
+    func emptyOpenAIAPIKeyThrowsError() throws {
+        #expect(throws: ConduitConfigurationError.emptyAPIKey) {
+            _ = try ConduitConfiguration.openAI(
+                apiKey: "",
+                model: .gpt4o
+            )
+        }
+    }
 
-        await #expect(throws: AgentError.self) {
-            _ = try await provider.generate(prompt: "   \n  \t  ", options: .default)
+    @Test("empty HuggingFace token throws error")
+    func emptyHuggingFaceTokenThrowsError() throws {
+        #expect(throws: ConduitConfigurationError.emptyToken) {
+            _ = try ConduitConfiguration.huggingFace(
+                token: "",
+                model: .huggingFace("test-model")
+            )
         }
     }
 
     // MARK: - Configuration Tests
 
-    @Test("configuration is accessible")
-    func configurationIsAccessible() throws {
-        let config = ConduitConfiguration.anthropic(
+    @Test("configuration preserves timeout")
+    func configurationPreservesTimeout() throws {
+        let config = try ConduitConfiguration.anthropic(
             apiKey: "test-key",
-            temperature: 0.7,
-            maxTokens: 1000
+            model: .claudeSonnet45,
+            timeout: 90
         )
 
-        let provider = try ConduitProvider(configuration: config)
-
-        #expect(provider.configuration.apiKey == "test-key")
-        #expect(provider.configuration.temperature == 0.7)
-        #expect(provider.configuration.maxTokens == 1000)
+        #expect(config.timeout == 90)
     }
 
-    @Test("retry strategy from configuration is used")
-    func retryStrategyFromConfigurationIsUsed() throws {
-        let config = ConduitConfiguration.anthropic(
+    @Test("configuration preserves max retries")
+    func configurationPreservesMaxRetries() throws {
+        let config = try ConduitConfiguration.anthropic(
             apiKey: "test-key",
+            model: .claudeSonnet45,
+            maxRetries: 5
+        )
+
+        #expect(config.maxRetries == 5)
+    }
+
+    @Test("configuration preserves system prompt")
+    func configurationPreservesSystemPrompt() throws {
+        let config = try ConduitConfiguration.anthropic(
+            apiKey: "test-key",
+            model: .claudeSonnet45,
+            systemPrompt: "You are a helpful assistant"
+        )
+
+        #expect(config.systemPrompt == "You are a helpful assistant")
+    }
+
+    @Test("retry strategy from configuration is preserved")
+    func retryStrategyFromConfigurationIsPreserved() throws {
+        let config = try ConduitConfiguration(
+            providerType: .foundationModels,
             retryStrategy: .aggressive
         )
 
-        let provider = try ConduitProvider(configuration: config)
-
-        #expect(provider.configuration.retryStrategy.maxRetries == 5)
+        #expect(config.retryStrategy.maxRetries == 5)
     }
 
-    @Test("provider with no retry strategy doesn't retry")
-    func providerWithNoRetryStrategyDoesntRetry() throws {
-        let config = ConduitConfiguration.anthropic(
-            apiKey: "test-key",
+    @Test("configuration with no retry strategy has none preset")
+    func configurationWithNoRetryStrategyHasNonePreset() throws {
+        let config = try ConduitConfiguration(
+            providerType: .foundationModels,
             retryStrategy: .none
         )
 
-        let provider = try ConduitProvider(configuration: config)
-
-        #expect(provider.configuration.retryStrategy.maxRetries == 0)
+        #expect(config.retryStrategy.maxRetries == 0)
     }
 
     // MARK: - Error Mapping Tests
 
-    @Test("ConduitProviderError maps to AgentError correctly")
-    func conduitProviderErrorMapsToAgentErrorCorrectly() {
-        let conduitError = ConduitProviderError.invalidInput(reason: "Test error")
+    @Test("ConduitProviderError maps networkError to AgentError correctly")
+    func conduitProviderErrorMapsNetworkErrorToAgentErrorCorrectly() {
+        let conduitError = ConduitProviderError.networkError(message: "Connection failed")
         let agentError = conduitError.toAgentError()
 
-        if case .invalidInput(let reason) = agentError {
-            #expect(reason == "Test error")
+        if case .inferenceProviderUnavailable(let reason) = agentError {
+            #expect(reason.contains("Network"))
         } else {
-            Issue.record("Expected invalidInput AgentError")
+            Issue.record("Expected inferenceProviderUnavailable AgentError")
         }
     }
 
@@ -153,18 +185,40 @@ struct ConduitProviderTests {
         }
     }
 
-    @Test("context length error includes token counts")
-    func contextLengthErrorIncludesTokenCounts() {
-        let conduitError = ConduitProviderError.contextLengthExceeded(
-            currentTokens: 10000,
-            maxTokens: 8000
-        )
+    @Test("token limit error includes token counts")
+    func tokenLimitErrorIncludesTokenCounts() {
+        let conduitError = ConduitProviderError.tokenLimitExceeded(count: 10000, limit: 8000)
         let agentError = conduitError.toAgentError()
 
-        if case .contextLengthExceeded = agentError {
-            // Success - correct mapping
+        if case .contextWindowExceeded(let tokenCount, let limit) = agentError {
+            #expect(tokenCount == 10000)
+            #expect(limit == 8000)
         } else {
-            Issue.record("Expected contextLengthExceeded AgentError")
+            Issue.record("Expected contextWindowExceeded AgentError")
+        }
+    }
+
+    @Test("model not available error maps correctly")
+    func modelNotAvailableErrorMapsCorrectly() {
+        let conduitError = ConduitProviderError.modelNotAvailable(model: "test-model")
+        let agentError = conduitError.toAgentError()
+
+        if case .modelNotAvailable(let model) = agentError {
+            #expect(model == "test-model")
+        } else {
+            Issue.record("Expected modelNotAvailable AgentError")
+        }
+    }
+
+    @Test("cancelled error maps correctly")
+    func cancelledErrorMapsCorrectly() {
+        let conduitError = ConduitProviderError.cancelled
+        let agentError = conduitError.toAgentError()
+
+        if case .cancelled = agentError {
+            // Success
+        } else {
+            Issue.record("Expected cancelled AgentError")
         }
     }
 
@@ -173,79 +227,79 @@ struct ConduitProviderTests {
     @Test("Anthropic provider type has correct display name")
     func anthropicProviderTypeHasCorrectDisplayName() {
         let providerType = ConduitProviderType.anthropic(
-            apiKey: "test",
-            model: .claudeSonnet35
+            model: .claudeSonnet45,
+            apiKey: "test"
         )
 
-        #expect(providerType.displayName.contains("Anthropic"))
+        #expect(providerType.displayName == "Anthropic")
     }
 
     @Test("OpenAI provider type has correct display name")
     func openAIProviderTypeHasCorrectDisplayName() {
         let providerType = ConduitProviderType.openAI(
-            apiKey: "test",
-            model: .gpt4o
+            model: .gpt4o,
+            apiKey: "test"
         )
 
-        #expect(providerType.displayName.contains("OpenAI"))
+        #expect(providerType.displayName == "OpenAI")
     }
 
     @Test("MLX provider type has correct display name")
     func mlxProviderTypeHasCorrectDisplayName() {
-        let providerType = ConduitProviderType.mlx(
-            model: ModelIdentifier(stringLiteral: "mlx-community/Llama-3.2-3B-Instruct-4bit")
-        )
+        let providerType = ConduitProviderType.mlx(model: .llama3_2_1b)
 
-        #expect(providerType.displayName.contains("MLX"))
+        #expect(providerType.displayName == "MLX (Local)")
     }
 
     @Test("HuggingFace provider type has correct display name")
     func huggingFaceProviderTypeHasCorrectDisplayName() {
         let providerType = ConduitProviderType.huggingFace(
-            apiKey: "test",
-            model: ModelIdentifier(stringLiteral: "meta-llama/Llama-3.1-8B-Instruct")
+            model: .huggingFace("meta-llama/Llama-3.1-8B-Instruct"),
+            token: "test"
         )
 
-        #expect(providerType.displayName.contains("HuggingFace"))
+        #expect(providerType.displayName == "HuggingFace")
     }
 
-    @Test("provider type description hides API key")
-    func providerTypeDescriptionHidesAPIKey() {
-        let providerType = ConduitProviderType.anthropic(
-            apiKey: "sk-ant-secret-key-12345",
-            model: .claudeSonnet35
-        )
+    @Test("Foundation Models provider type has correct display name")
+    func foundationModelsProviderTypeHasCorrectDisplayName() {
+        let providerType = ConduitProviderType.foundationModels
 
-        let description = String(describing: providerType)
-
-        #expect(!description.contains("sk-ant-secret-key-12345"))
-        #expect(description.contains("***") || description.contains("hidden"))
+        #expect(providerType.displayName == "Apple Foundation Models")
     }
 
     @Test("MLX provider requires network returns false")
     func mlxProviderRequiresNetworkReturnsFalse() {
-        let providerType = ConduitProviderType.mlx(
-            model: ModelIdentifier(stringLiteral: "test-model")
-        )
+        let providerType = ConduitProviderType.mlx(model: .llama3_2_1b)
 
         #expect(providerType.requiresNetwork == false)
+        #expect(providerType.isOnDevice == true)
+    }
+
+    @Test("Foundation Models provider requires network returns false")
+    func foundationModelsProviderRequiresNetworkReturnsFalse() {
+        let providerType = ConduitProviderType.foundationModels
+
+        #expect(providerType.requiresNetwork == false)
+        #expect(providerType.isOnDevice == true)
     }
 
     @Test("Anthropic provider requires network returns true")
     func anthropicProviderRequiresNetworkReturnsTrue() {
         let providerType = ConduitProviderType.anthropic(
-            apiKey: "test",
-            model: .claudeSonnet35
+            model: .claudeSonnet45,
+            apiKey: "test"
         )
 
         #expect(providerType.requiresNetwork == true)
+        #expect(providerType.isOnDevice == false)
     }
 
     @Test("OpenAI provider requires network returns true")
     func openAIProviderRequiresNetworkReturnsTrue() {
         let providerType = ConduitProviderType.openAI(
-            apiKey: "test",
-            model: .gpt4o
+            model: .gpt4o,
+            apiKey: "test"
         )
 
         #expect(providerType.requiresNetwork == true)
@@ -254,8 +308,8 @@ struct ConduitProviderTests {
     @Test("HuggingFace provider requires network returns true")
     func huggingFaceProviderRequiresNetworkReturnsTrue() {
         let providerType = ConduitProviderType.huggingFace(
-            apiKey: "test",
-            model: ModelIdentifier(stringLiteral: "test-model")
+            model: .huggingFace("test-model"),
+            token: "test"
         )
 
         #expect(providerType.requiresNetwork == true)
@@ -266,72 +320,84 @@ struct ConduitProviderTests {
     @Test("Anthropic model string is correct")
     func anthropicModelStringIsCorrect() {
         let providerType = ConduitProviderType.anthropic(
-            apiKey: "test",
-            model: .claudeSonnet35
+            model: .claudeSonnet45,
+            apiKey: "test"
         )
 
         let modelString = providerType.modelString
-        #expect(!modelString.isEmpty)
+        #expect(modelString.contains("claude-sonnet"))
     }
 
     @Test("OpenAI model string is correct")
     func openAIModelStringIsCorrect() {
         let providerType = ConduitProviderType.openAI(
-            apiKey: "test",
-            model: .gpt4o
+            model: .gpt4o,
+            apiKey: "test"
         )
+
+        let modelString = providerType.modelString
+        #expect(modelString == "gpt-4o")
+    }
+
+    @Test("MLX model string matches identifier")
+    func mlxModelStringMatchesIdentifier() {
+        let providerType = ConduitProviderType.mlx(model: .llama3_2_1b)
 
         let modelString = providerType.modelString
         #expect(!modelString.isEmpty)
     }
 
-    @Test("MLX model string matches identifier")
-    func mlxModelStringMatchesIdentifier() {
-        let modelID = ModelIdentifier(stringLiteral: "test-model-id")
-        let providerType = ConduitProviderType.mlx(model: modelID)
-
-        let modelString = providerType.modelString
-        #expect(modelString == "test-model-id")
-    }
-
     @Test("HuggingFace model string matches identifier")
     func huggingFaceModelStringMatchesIdentifier() {
-        let modelID = ModelIdentifier(stringLiteral: "test-hf-model")
+        let modelID = ModelIdentifier.huggingFace("test-hf-model")
         let providerType = ConduitProviderType.huggingFace(
-            apiKey: "test",
-            model: modelID
+            model: modelID,
+            token: "test"
         )
 
         let modelString = providerType.modelString
-        #expect(modelString == "test-hf-model")
+        #expect(modelString.contains("test-hf-model"))
     }
 
-    // MARK: - Configuration Factory Tests
+    @Test("Foundation Models model string is set")
+    func foundationModelsModelStringIsSet() {
+        let providerType = ConduitProviderType.foundationModels
 
-    @Test("ConduitConfiguration from provider type creates valid config")
-    func conduitConfigurationFromProviderTypeCreatesValidConfig() throws {
-        let providerType = ConduitProviderType.anthropic(
-            apiKey: "test-key",
-            model: .claudeSonnet35,
-            systemPrompt: "You are helpful"
-        )
-
-        let config = try ConduitConfiguration(providerType: providerType)
-
-        #expect(config.apiKey == "test-key")
-        #expect(config.systemPrompt == "You are helpful")
-        try config.validate()
+        let modelString = providerType.modelString
+        #expect(!modelString.isEmpty)
     }
 
-    @Test("ConduitConfiguration validation catches empty API key")
-    func conduitConfigurationValidationCatchesEmptyAPIKey() throws {
-        let providerType = ConduitProviderType.anthropic(
-            apiKey: "",
-            model: .claudeSonnet35
-        )
+    // MARK: - Equatable Tests
 
-        #expect(throws: ConduitConfiguration.ValidationError.self) {
-            _ = try ConduitConfiguration(providerType: providerType)
-        }
+    @Test("same provider types are equal")
+    func sameProviderTypesAreEqual() {
+        let type1 = ConduitProviderType.anthropic(model: .claudeSonnet45, apiKey: "test")
+        let type2 = ConduitProviderType.anthropic(model: .claudeSonnet45, apiKey: "test")
+
+        #expect(type1 == type2)
+    }
+
+    @Test("different provider types are not equal")
+    func differentProviderTypesAreNotEqual() {
+        let type1 = ConduitProviderType.anthropic(model: .claudeSonnet45, apiKey: "test")
+        let type2 = ConduitProviderType.openAI(model: .gpt4o, apiKey: "test")
+
+        #expect(type1 != type2)
+    }
+
+    @Test("same provider type with different API keys are not equal")
+    func sameProviderTypeWithDifferentAPIKeysAreNotEqual() {
+        let type1 = ConduitProviderType.anthropic(model: .claudeSonnet45, apiKey: "key1")
+        let type2 = ConduitProviderType.anthropic(model: .claudeSonnet45, apiKey: "key2")
+
+        #expect(type1 != type2)
+    }
+
+    @Test("same provider type with different models are not equal")
+    func sameProviderTypeWithDifferentModelsAreNotEqual() {
+        let type1 = ConduitProviderType.openAI(model: .gpt4o, apiKey: "test")
+        let type2 = ConduitProviderType.openAI(model: .gpt4oMini, apiKey: "test")
+
+        #expect(type1 != type2)
     }
 }

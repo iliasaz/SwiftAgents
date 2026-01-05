@@ -3,10 +3,10 @@
 //
 // Tests for type mapping between SwiftAgents and Conduit types.
 
+import Conduit
 import Foundation
 @testable import SwiftAgents
 import Testing
-import Conduit
 
 @Suite("ConduitTypeMappers Tests")
 struct ConduitTypeMappersTests {
@@ -84,12 +84,12 @@ struct ConduitTypeMappersTests {
 
         let options = InferenceOptions.from(conduitConfig: config)
 
-        #expect(options.temperature == Double(0.7))
+        #expect(abs(options.temperature - 0.7) < 0.001)
         #expect(options.maxTokens == 1000)
-        #expect(options.topP == Double(0.9))
+        #expect(abs(options.topP! - 0.9) < 0.001)
         #expect(options.topK == 50)
-        #expect(options.frequencyPenalty == Double(0.3))
-        #expect(options.presencePenalty == Double(0.5))
+        #expect(abs(options.frequencyPenalty! - 0.3) < 0.001)
+        #expect(abs(options.presencePenalty! - 0.5) < 0.001)
         #expect(options.stopSequences == ["STOP"])
     }
 
@@ -126,9 +126,9 @@ struct ConduitTypeMappersTests {
         #expect(agentsReason == .completed)
     }
 
-    @Test("FinishReason.length maps to maxTokens")
-    func finishReasonLengthMapsToMaxTokens() {
-        let conduitReason = FinishReason.length
+    @Test("FinishReason.maxTokens maps to maxTokens")
+    func finishReasonMaxTokensMapsToMaxTokens() {
+        let conduitReason = FinishReason.maxTokens
         let agentsReason = conduitReason.toSwiftAgentsFinishReason()
 
         #expect(agentsReason == .maxTokens)
@@ -142,46 +142,99 @@ struct ConduitTypeMappersTests {
         #expect(agentsReason == .toolCall)
     }
 
-    @Test("FinishReason.contentFilter maps to contentFiltered")
-    func finishReasonContentFilterMapsToContentFiltered() {
+    @Test("FinishReason.contentFilter maps to contentFilter")
+    func finishReasonContentFilterMapsToContentFilter() {
         let conduitReason = FinishReason.contentFilter
         let agentsReason = conduitReason.toSwiftAgentsFinishReason()
 
-        #expect(agentsReason == .contentFiltered)
+        #expect(agentsReason == .contentFilter)
+    }
+
+    @Test("FinishReason.cancelled maps to cancelled")
+    func finishReasonCancelledMapsToCancelled() {
+        let conduitReason = FinishReason.cancelled
+        let agentsReason = conduitReason.toSwiftAgentsFinishReason()
+
+        #expect(agentsReason == .cancelled)
+    }
+
+    @Test("FinishReason.stopSequence maps to completed")
+    func finishReasonStopSequenceMapsToCompleted() {
+        let conduitReason = FinishReason.stopSequence
+        let agentsReason = conduitReason.toSwiftAgentsFinishReason()
+
+        #expect(agentsReason == .completed)
+    }
+
+    // MARK: - SwiftAgents FinishReason to Conduit Tests
+
+    @Test("SwiftAgents completed maps to Conduit stop")
+    func swiftAgentsCompletedMapsToConduitStop() {
+        let agentsReason = InferenceResponse.FinishReason.completed
+        let conduitReason = agentsReason.toConduitFinishReason()
+
+        #expect(conduitReason == .stop)
+    }
+
+    @Test("SwiftAgents maxTokens maps to Conduit maxTokens")
+    func swiftAgentsMaxTokensMapsToConduitMaxTokens() {
+        let agentsReason = InferenceResponse.FinishReason.maxTokens
+        let conduitReason = agentsReason.toConduitFinishReason()
+
+        #expect(conduitReason == .maxTokens)
+    }
+
+    @Test("SwiftAgents toolCall maps to Conduit toolCall")
+    func swiftAgentsToolCallMapsToConduitToolCall() {
+        let agentsReason = InferenceResponse.FinishReason.toolCall
+        let conduitReason = agentsReason.toConduitFinishReason()
+
+        #expect(conduitReason == .toolCall)
     }
 
     // MARK: - Usage Mapping Tests
 
-    @Test("Usage converts to TokenUsage correctly")
-    func usageConvertsToTokenUsageCorrectly() {
-        let usage = Usage(
-            inputTokens: 100,
-            outputTokens: 50,
-            totalTokens: 150
+    @Test("UsageStats converts to TokenUsage correctly")
+    func usageStatsConvertsToTokenUsageCorrectly() {
+        let usage = UsageStats(
+            promptTokens: 100,
+            completionTokens: 50
         )
 
         let tokenUsage = usage.toTokenUsage()
 
-        #expect(tokenUsage.promptTokens == 100)
-        #expect(tokenUsage.completionTokens == 50)
-        #expect(tokenUsage.totalTokens == 150)
+        #expect(tokenUsage.inputTokens == 100)
+        #expect(tokenUsage.outputTokens == 50)
     }
 
-    @Test("nil Usage maps to nil TokenUsage")
-    func nilUsageMapsToNilTokenUsage() {
-        let usage: Usage? = nil
+    @Test("nil UsageStats maps to nil TokenUsage")
+    func nilUsageStatsMapsToNilTokenUsage() {
+        let usage: UsageStats? = nil
 
         let tokenUsage = usage?.toTokenUsage()
 
         #expect(tokenUsage == nil)
     }
 
-    // MARK: - StructuredContent Mapping Tests
+    @Test("TokenUsage converts to UsageStats correctly")
+    func tokenUsageConvertsToUsageStatsCorrectly() {
+        let tokenUsage = InferenceResponse.TokenUsage(
+            inputTokens: 100,
+            outputTokens: 50
+        )
 
-    @Test("text StructuredContent maps to string SendableValue")
-    func textStructuredContentMapsToStringSendableValue() throws {
-        let content = StructuredContent.text("Hello, world!")
-        let sendableValue = try content.toSendableValue()
+        let usage = tokenUsage.toConduitUsageStats()
+
+        #expect(usage.promptTokens == 100)
+        #expect(usage.completionTokens == 50)
+    }
+
+    // MARK: - StructuredContent to SendableValue Tests
+
+    @Test("string StructuredContent maps to string SendableValue")
+    func stringStructuredContentMapsToStringSendableValue() {
+        let content = StructuredContent.string("Hello, world!")
+        let sendableValue = content.toSendableValue()
 
         if case .string(let text) = sendableValue {
             #expect(text == "Hello, world!")
@@ -191,9 +244,9 @@ struct ConduitTypeMappersTests {
     }
 
     @Test("number StructuredContent with integer maps to int SendableValue")
-    func numberStructuredContentWithIntegerMapsToIntSendableValue() throws {
+    func numberStructuredContentWithIntegerMapsToIntSendableValue() {
         let content = StructuredContent.number(42.0)
-        let sendableValue = try content.toSendableValue()
+        let sendableValue = content.toSendableValue()
 
         if case .int(let value) = sendableValue {
             #expect(value == 42)
@@ -203,9 +256,9 @@ struct ConduitTypeMappersTests {
     }
 
     @Test("number StructuredContent with decimal maps to double SendableValue")
-    func numberStructuredContentWithDecimalMapsToDoubleSendableValue() throws {
+    func numberStructuredContentWithDecimalMapsToDoubleSendableValue() {
         let content = StructuredContent.number(42.5)
-        let sendableValue = try content.toSendableValue()
+        let sendableValue = content.toSendableValue()
 
         if case .double(let value) = sendableValue {
             #expect(value == 42.5)
@@ -215,9 +268,9 @@ struct ConduitTypeMappersTests {
     }
 
     @Test("boolean StructuredContent maps to bool SendableValue")
-    func booleanStructuredContentMapsToBoolSendableValue() throws {
-        let content = StructuredContent.boolean(true)
-        let sendableValue = try content.toSendableValue()
+    func booleanStructuredContentMapsToBoolSendableValue() {
+        let content = StructuredContent.bool(true)
+        let sendableValue = content.toSendableValue()
 
         if case .bool(let value) = sendableValue {
             #expect(value == true)
@@ -227,9 +280,9 @@ struct ConduitTypeMappersTests {
     }
 
     @Test("null StructuredContent maps to null SendableValue")
-    func nullStructuredContentMapsToNullSendableValue() throws {
+    func nullStructuredContentMapsToNullSendableValue() {
         let content = StructuredContent.null
-        let sendableValue = try content.toSendableValue()
+        let sendableValue = content.toSendableValue()
 
         if case .null = sendableValue {
             // Success
@@ -239,14 +292,14 @@ struct ConduitTypeMappersTests {
     }
 
     @Test("array StructuredContent maps to array SendableValue")
-    func arrayStructuredContentMapsToArraySendableValue() throws {
+    func arrayStructuredContentMapsToArraySendableValue() {
         let content = StructuredContent.array([
-            .text("item1"),
+            .string("item1"),
             .number(42),
-            .boolean(true)
+            .bool(true)
         ])
 
-        let sendableValue = try content.toSendableValue()
+        let sendableValue = content.toSendableValue()
 
         if case .array(let items) = sendableValue {
             #expect(items.count == 3)
@@ -256,13 +309,13 @@ struct ConduitTypeMappersTests {
     }
 
     @Test("object StructuredContent maps to dictionary SendableValue")
-    func objectStructuredContentMapsToDictionarySendableValue() throws {
+    func objectStructuredContentMapsToDictionarySendableValue() {
         let content = StructuredContent.object([
-            "name": .text("John"),
+            "name": .string("John"),
             "age": .number(30)
         ])
 
-        let sendableValue = try content.toSendableValue()
+        let sendableValue = content.toSendableValue()
 
         if case .dictionary(let dict) = sendableValue {
             #expect(dict.count == 2)
@@ -275,15 +328,15 @@ struct ConduitTypeMappersTests {
 
     // MARK: - SendableValue to StructuredContent Tests
 
-    @Test("string SendableValue maps to text StructuredContent")
-    func stringSendableValueMapsToTextStructuredContent() {
+    @Test("string SendableValue maps to string StructuredContent")
+    func stringSendableValueMapsToStringStructuredContent() {
         let value = SendableValue.string("Test")
         let content = value.toStructuredContent()
 
-        if case .text(let text) = content {
+        if case .string(let text) = content.kind {
             #expect(text == "Test")
         } else {
-            Issue.record("Expected text StructuredContent, got \(content)")
+            Issue.record("Expected string StructuredContent, got \(content)")
         }
     }
 
@@ -292,7 +345,7 @@ struct ConduitTypeMappersTests {
         let value = SendableValue.int(42)
         let content = value.toStructuredContent()
 
-        if case .number(let num) = content {
+        if case .number(let num) = content.kind {
             #expect(num == 42.0)
         } else {
             Issue.record("Expected number StructuredContent, got \(content)")
@@ -304,22 +357,22 @@ struct ConduitTypeMappersTests {
         let value = SendableValue.double(42.5)
         let content = value.toStructuredContent()
 
-        if case .number(let num) = content {
+        if case .number(let num) = content.kind {
             #expect(num == 42.5)
         } else {
             Issue.record("Expected number StructuredContent, got \(content)")
         }
     }
 
-    @Test("bool SendableValue maps to boolean StructuredContent")
-    func boolSendableValueMapsToBooleanStructuredContent() {
+    @Test("bool SendableValue maps to bool StructuredContent")
+    func boolSendableValueMapsToBoolStructuredContent() {
         let value = SendableValue.bool(true)
         let content = value.toStructuredContent()
 
-        if case .boolean(let bool) = content {
+        if case .bool(let bool) = content.kind {
             #expect(bool == true)
         } else {
-            Issue.record("Expected boolean StructuredContent, got \(content)")
+            Issue.record("Expected bool StructuredContent, got \(content)")
         }
     }
 
@@ -328,7 +381,7 @@ struct ConduitTypeMappersTests {
         let value = SendableValue.null
         let content = value.toStructuredContent()
 
-        if case .null = content {
+        if case .null = content.kind {
             // Success
         } else {
             Issue.record("Expected null StructuredContent, got \(content)")
@@ -344,7 +397,7 @@ struct ConduitTypeMappersTests {
 
         let content = value.toStructuredContent()
 
-        if case .array(let items) = content {
+        if case .array(let items) = content.kind {
             #expect(items.count == 2)
         } else {
             Issue.record("Expected array StructuredContent, got \(content)")
@@ -359,7 +412,7 @@ struct ConduitTypeMappersTests {
 
         let content = value.toStructuredContent()
 
-        if case .object(let dict) = content {
+        if case .object(let dict) = content.kind {
             #expect(dict.count == 1)
             #expect(dict["key"] != nil)
         } else {
@@ -369,42 +422,57 @@ struct ConduitTypeMappersTests {
 
     // MARK: - Round Trip Tests
 
-    @Test("StructuredContent round trip preserves text")
-    func structuredContentRoundTripPreservesText() throws {
-        let original = StructuredContent.text("Hello")
-        let sendable = try original.toSendableValue()
+    @Test("StructuredContent round trip preserves string")
+    func structuredContentRoundTripPreservesString() {
+        let original = StructuredContent.string("Hello")
+        let sendable = original.toSendableValue()
         let result = sendable.toStructuredContent()
 
-        if case .text(let text) = result {
+        if case .string(let text) = result.kind {
             #expect(text == "Hello")
         } else {
-            Issue.record("Round trip failed for text")
+            Issue.record("Round trip failed for string")
         }
     }
 
     @Test("StructuredContent round trip preserves nested structures")
-    func structuredContentRoundTripPreservesNestedStructures() throws {
+    func structuredContentRoundTripPreservesNestedStructures() {
         let original = StructuredContent.object([
             "user": .object([
-                "name": .text("John"),
+                "name": .string("John"),
                 "age": .number(30),
-                "active": .boolean(true)
+                "active": .bool(true)
             ]),
             "items": .array([
-                .text("item1"),
+                .string("item1"),
                 .number(42)
             ])
         ])
 
-        let sendable = try original.toSendableValue()
+        let sendable = original.toSendableValue()
         let result = sendable.toStructuredContent()
 
-        if case .object(let dict) = result {
+        if case .object(let dict) = result.kind {
             #expect(dict.count == 2)
             #expect(dict["user"] != nil)
             #expect(dict["items"] != nil)
         } else {
             Issue.record("Round trip failed for nested structure")
         }
+    }
+
+    // MARK: - ConduitMappingError Tests
+
+    @Test("ConduitMappingError has descriptive messages")
+    func conduitMappingErrorHasDescriptiveMessages() {
+        let error1 = ConduitMappingError.argumentConversionFailed("test reason")
+        #expect(error1.errorDescription?.contains("test reason") == true)
+
+        let error2 = ConduitMappingError.toolCallCreationFailed("creation failed")
+        #expect(error2.errorDescription?.contains("creation failed") == true)
+
+        let error3 = ConduitMappingError.unexpectedType(expected: "string", actual: "number")
+        #expect(error3.errorDescription?.contains("string") == true)
+        #expect(error3.errorDescription?.contains("number") == true)
     }
 }

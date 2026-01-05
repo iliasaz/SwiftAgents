@@ -5,7 +5,8 @@
 
 import Foundation
 @testable import SwiftAgents
-import Conduit
+
+// No Conduit import needed - this mock only uses SwiftAgents types
 
 /// A mock Conduit provider for testing agents without real LLM backends.
 ///
@@ -39,13 +40,13 @@ public actor MockConduitProvider: InferenceProvider {
     public var defaultResponse = "Final Answer: Mock Conduit response"
 
     /// Simulated tool calls to return from generateWithToolCalls.
-    public var mockToolCalls: [ParsedToolCall] = []
+    public var mockToolCalls: [InferenceResponse.ParsedToolCall] = []
 
     /// Simulated finish reason for responses.
     public var mockFinishReason: InferenceResponse.FinishReason = .completed
 
     /// Simulated token usage for responses.
-    public var mockUsage: TokenUsage?
+    public var mockUsage: InferenceResponse.TokenUsage?
 
     // MARK: - Call Recording
 
@@ -108,7 +109,7 @@ public actor MockConduitProvider: InferenceProvider {
     }
 
     /// Sets the mock tool calls to return.
-    public func setMockToolCalls(_ toolCalls: [ParsedToolCall]) {
+    public func setMockToolCalls(_ toolCalls: [InferenceResponse.ParsedToolCall]) {
         mockToolCalls = toolCalls
     }
 
@@ -118,7 +119,7 @@ public actor MockConduitProvider: InferenceProvider {
     }
 
     /// Sets the mock token usage.
-    public func setUsage(_ usage: TokenUsage?) {
+    public func setUsage(_ usage: InferenceResponse.TokenUsage?) {
         mockUsage = usage
     }
 
@@ -248,7 +249,7 @@ public actor MockConduitProvider: InferenceProvider {
     /// - Parameters:
     ///   - afterCalls: Number of successful calls before rate limiting.
     ///   - retryAfter: Retry delay hint in seconds.
-    public func configureRateLimiting(afterCalls: Int = 1, retryAfter: Int = 60) {
+    public func configureRateLimiting(afterCalls: Int = 1, retryAfter: TimeInterval = 60) {
         // This would need more sophisticated state management
         // For now, users can manually set error after N calls
         if generateCallCount >= afterCalls {
@@ -258,23 +259,23 @@ public actor MockConduitProvider: InferenceProvider {
 
     /// Configures the mock to return tool calls.
     /// - Parameter toolCalls: The tool calls to return.
-    public func configureToolCalls(_ toolCalls: [ParsedToolCall]) {
+    public func configureToolCalls(_ toolCalls: [InferenceResponse.ParsedToolCall]) {
         mockToolCalls = toolCalls
         mockFinishReason = .toolCall
     }
 
-    /// Configures the mock to simulate context length exceeded.
-    public func configureContextLengthExceeded() {
-        errorToThrow = AgentError.contextLengthExceeded(
-            currentTokens: 10000,
-            maxTokens: 8000
+    /// Configures the mock to simulate context window exceeded.
+    public func configureContextWindowExceeded() {
+        errorToThrow = AgentError.contextWindowExceeded(
+            tokenCount: 10000,
+            limit: 8000
         )
     }
 
     /// Configures the mock to simulate authentication failure.
     public func configureAuthenticationFailure() {
-        errorToThrow = AgentError.inferenceProviderError(
-            description: "Authentication failed: Invalid API key"
+        errorToThrow = AgentError.inferenceProviderUnavailable(
+            reason: "Authentication failed: Invalid API key"
         )
     }
 
@@ -285,8 +286,8 @@ public actor MockConduitProvider: InferenceProvider {
             code: NSURLErrorNotConnectedToInternet,
             userInfo: [NSLocalizedDescriptionKey: "Network connection lost"]
         )
-        errorToThrow = AgentError.inferenceProviderError(
-            description: networkError.localizedDescription
+        errorToThrow = AgentError.inferenceProviderUnavailable(
+            reason: "Network error: \(networkError.localizedDescription)"
         )
     }
 
@@ -340,7 +341,7 @@ extension MockConduitProvider {
     /// Gets all tool names from tool call generations.
     public var allToolNames: [String] {
         toolCallCalls.flatMap { call in
-            call.tools.map(\.name)
+            call.tools.map { $0.name }
         }
     }
 }

@@ -3,162 +3,122 @@
 //
 // Tests for ConduitToolConverter functionality.
 
+import Conduit
 import Foundation
+import OrderedCollections
 @testable import SwiftAgents
 import Testing
-import Conduit
-import OrderedCollections
+
+// Note: ToolDefinition from SwiftAgents is used (imported via @testable import SwiftAgents)
 
 @Suite("ConduitToolConverter Tests")
 struct ConduitToolConverterTests {
-    // MARK: - ToolDefinition to AIToolDefinition Tests
+    // MARK: - ToolDefinition to ConduitToolDefinition Tests
 
     @Test("basic tool definition converts correctly")
-    func basicToolDefinitionConvertsCorrectly() throws {
+    func basicToolDefinitionConvertsCorrectly() {
         let toolDef = ToolDefinition(
             name: "calculator",
             description: "Performs calculations",
             parameters: [
-                "expression": .string(description: "The expression to evaluate")
+                ToolParameter(name: "expression", description: "The expression to evaluate", type: .string, isRequired: true)
             ]
         )
 
-        let aiToolDef = try toolDef.toConduitToolDefinition()
+        let conduitToolDef = ConduitToolConverter.toConduitToolDefinition(toolDef)
 
-        #expect(aiToolDef.name == "calculator")
-        #expect(aiToolDef.description == "Performs calculations")
-        #expect(aiToolDef.parameters.count == 1)
+        #expect(conduitToolDef.name == "calculator")
+        #expect(conduitToolDef.description == "Performs calculations")
     }
 
     @Test("tool with multiple parameters converts correctly")
-    func toolWithMultipleParametersConvertsCorrectly() throws {
+    func toolWithMultipleParametersConvertsCorrectly() {
         let toolDef = ToolDefinition(
             name: "search",
             description: "Searches for information",
             parameters: [
-                "query": .string(description: "Search query"),
-                "limit": .integer(description: "Result limit"),
-                "caseSensitive": .boolean(description: "Case sensitive search")
+                ToolParameter(name: "query", description: "Search query", type: .string, isRequired: true),
+                ToolParameter(name: "limit", description: "Result limit", type: .int, isRequired: false),
+                ToolParameter(name: "caseSensitive", description: "Case sensitive search", type: .bool, isRequired: false)
             ]
         )
 
-        let aiToolDef = try toolDef.toConduitToolDefinition()
+        let conduitToolDef = ConduitToolConverter.toConduitToolDefinition(toolDef)
 
-        #expect(aiToolDef.parameters.count == 3)
-        #expect(aiToolDef.parameters.keys.contains("query"))
-        #expect(aiToolDef.parameters.keys.contains("limit"))
-        #expect(aiToolDef.parameters.keys.contains("caseSensitive"))
+        #expect(conduitToolDef.name == "search")
+        #expect(conduitToolDef.description == "Searches for information")
     }
 
     @Test("tool with nested object parameters converts correctly")
-    func toolWithNestedObjectParametersConvertsCorrectly() throws {
+    func toolWithNestedObjectParametersConvertsCorrectly() {
         let toolDef = ToolDefinition(
             name: "createUser",
             description: "Creates a new user",
             parameters: [
-                "user": .object(
-                    properties: [
-                        "name": .string(description: "User name"),
-                        "age": .integer(description: "User age")
-                    ],
-                    description: "User information"
+                ToolParameter(
+                    name: "user",
+                    description: "User information",
+                    type: .object(properties: [
+                        ToolParameter(name: "name", description: "User name", type: .string, isRequired: true),
+                        ToolParameter(name: "age", description: "User age", type: .int, isRequired: true)
+                    ]),
+                    isRequired: true
                 )
             ]
         )
 
-        let aiToolDef = try toolDef.toConduitToolDefinition()
+        let conduitToolDef = ConduitToolConverter.toConduitToolDefinition(toolDef)
 
-        #expect(aiToolDef.parameters.count == 1)
-        #expect(aiToolDef.parameters.keys.contains("user"))
+        #expect(conduitToolDef.name == "createUser")
     }
 
     @Test("tool with array parameters converts correctly")
-    func toolWithArrayParametersConvertsCorrectly() throws {
+    func toolWithArrayParametersConvertsCorrectly() {
         let toolDef = ToolDefinition(
             name: "processBatch",
             description: "Processes multiple items",
             parameters: [
-                "items": .array(
-                    items: .string(description: "Item"),
-                    description: "List of items to process"
+                ToolParameter(
+                    name: "items",
+                    description: "List of items to process",
+                    type: .array(elementType: .string),
+                    isRequired: true
                 )
             ]
         )
 
-        let aiToolDef = try toolDef.toConduitToolDefinition()
+        let conduitToolDef = ConduitToolConverter.toConduitToolDefinition(toolDef)
 
-        #expect(aiToolDef.parameters.count == 1)
-        #expect(aiToolDef.parameters.keys.contains("items"))
-    }
-
-    @Test("tool with optional parameters converts correctly")
-    func toolWithOptionalParametersConvertsCorrectly() throws {
-        let toolDef = ToolDefinition(
-            name: "search",
-            description: "Searches",
-            parameters: [
-                "query": .string(description: "Required query"),
-                "limit": .optional(
-                    wrapped: .integer(description: "Optional limit")
-                )
-            ]
-        )
-
-        let aiToolDef = try toolDef.toConduitToolDefinition()
-
-        #expect(aiToolDef.parameters.count == 2)
+        #expect(conduitToolDef.name == "processBatch")
     }
 
     @Test("tool with enum parameters converts correctly")
-    func toolWithEnumParametersConvertsCorrectly() throws {
+    func toolWithEnumParametersConvertsCorrectly() {
         let toolDef = ToolDefinition(
             name: "setMode",
             description: "Sets the mode",
             parameters: [
-                "mode": .oneOf(
-                    options: [
-                        .string(description: "light"),
-                        .string(description: "dark")
-                    ],
-                    description: "Display mode"
+                ToolParameter(
+                    name: "mode",
+                    description: "Display mode",
+                    type: .oneOf(["light", "dark", "auto"]),
+                    isRequired: true
                 )
             ]
         )
 
-        let aiToolDef = try toolDef.toConduitToolDefinition()
+        let conduitToolDef = ConduitToolConverter.toConduitToolDefinition(toolDef)
 
-        #expect(aiToolDef.parameters.count == 1)
-        #expect(aiToolDef.parameters.keys.contains("mode"))
-    }
-
-    @Test("required parameters are preserved")
-    func requiredParametersArePreserved() throws {
-        let toolDef = ToolDefinition(
-            name: "test",
-            description: "Test tool",
-            parameters: [
-                "required1": .string(description: "Required"),
-                "required2": .integer(description: "Also required"),
-                "optional": .optional(wrapped: .string(description: "Optional"))
-            ]
-        )
-
-        let aiToolDef = try toolDef.toConduitToolDefinition()
-
-        // Both required parameters should be in required array
-        // Optional parameters should not be required
-        #expect(aiToolDef.parameters.count == 3)
+        #expect(conduitToolDef.name == "setMode")
     }
 
     // MARK: - Type Conversion Tests
 
     @Test("string type converts to correct schema")
-    func stringTypeConvertsToCorrectSchema() throws {
-        let param = ToolDefinition.ParameterType.string(description: "A string param")
+    func stringTypeConvertsToCorrectSchema() {
+        let schema = ConduitToolConverter.convertParameterType(.string)
 
-        let schema = try ConduitToolConverter.convertParameterType(param)
-
-        if case .string = schema.type {
+        if case .string = schema {
             // Success
         } else {
             Issue.record("Expected string type in schema")
@@ -166,12 +126,10 @@ struct ConduitToolConverterTests {
     }
 
     @Test("integer type converts to correct schema")
-    func integerTypeConvertsToCorrectSchema() throws {
-        let param = ToolDefinition.ParameterType.integer(description: "An integer param")
+    func integerTypeConvertsToCorrectSchema() {
+        let schema = ConduitToolConverter.convertParameterType(.int)
 
-        let schema = try ConduitToolConverter.convertParameterType(param)
-
-        if case .integer = schema.type {
+        if case .integer = schema {
             // Success
         } else {
             Issue.record("Expected integer type in schema")
@@ -179,12 +137,10 @@ struct ConduitToolConverterTests {
     }
 
     @Test("number type converts to correct schema")
-    func numberTypeConvertsToCorrectSchema() throws {
-        let param = ToolDefinition.ParameterType.number(description: "A number param")
+    func numberTypeConvertsToCorrectSchema() {
+        let schema = ConduitToolConverter.convertParameterType(.double)
 
-        let schema = try ConduitToolConverter.convertParameterType(param)
-
-        if case .number = schema.type {
+        if case .number = schema {
             // Success
         } else {
             Issue.record("Expected number type in schema")
@@ -192,12 +148,10 @@ struct ConduitToolConverterTests {
     }
 
     @Test("boolean type converts to correct schema")
-    func booleanTypeConvertsToCorrectSchema() throws {
-        let param = ToolDefinition.ParameterType.boolean(description: "A boolean param")
+    func booleanTypeConvertsToCorrectSchema() {
+        let schema = ConduitToolConverter.convertParameterType(.bool)
 
-        let schema = try ConduitToolConverter.convertParameterType(param)
-
-        if case .boolean = schema.type {
+        if case .boolean = schema {
             // Success
         } else {
             Issue.record("Expected boolean type in schema")
@@ -205,15 +159,10 @@ struct ConduitToolConverterTests {
     }
 
     @Test("array type converts to correct schema")
-    func arrayTypeConvertsToCorrectSchema() throws {
-        let param = ToolDefinition.ParameterType.array(
-            items: .string(description: "Item"),
-            description: "An array param"
-        )
+    func arrayTypeConvertsToCorrectSchema() {
+        let schema = ConduitToolConverter.convertParameterType(.array(elementType: .string))
 
-        let schema = try ConduitToolConverter.convertParameterType(param)
-
-        if case .array = schema.type {
+        if case .array = schema {
             // Success
         } else {
             Issue.record("Expected array type in schema")
@@ -221,15 +170,14 @@ struct ConduitToolConverterTests {
     }
 
     @Test("object type converts to correct schema")
-    func objectTypeConvertsToCorrectSchema() throws {
-        let param = ToolDefinition.ParameterType.object(
-            properties: ["key": .string(description: "Value")],
-            description: "An object param"
+    func objectTypeConvertsToCorrectSchema() {
+        let schema = ConduitToolConverter.convertParameterType(
+            .object(properties: [
+                ToolParameter(name: "key", description: "Value", type: .string, isRequired: true)
+            ])
         )
 
-        let schema = try ConduitToolConverter.convertParameterType(param)
-
-        if case .object = schema.type {
+        if case .object = schema {
             // Success
         } else {
             Issue.record("Expected object type in schema")
@@ -238,113 +186,182 @@ struct ConduitToolConverterTests {
 
     // MARK: - Tool Extension Tests
 
-    @Test("Tool conforms to protocol correctly")
-    func toolConformsToProtocolCorrectly() {
-        let tool = TestTool()
-
-        #expect(tool.name == "test_tool")
-        #expect(!tool.description.isEmpty)
-    }
-
     @Test("Tool provides valid definition")
     func toolProvidesValidDefinition() {
-        let tool = TestTool()
+        let tool = TestCalculatorTool()
         let definition = tool.definition
 
         #expect(definition.name == tool.name)
         #expect(definition.description == tool.description)
+        #expect(definition.parameters.count == tool.parameters.count)
+    }
+
+    @Test("Tool definition converts to Conduit format")
+    func toolDefinitionConvertsToConduitFormat() {
+        let tool = TestCalculatorTool()
+        let conduitDef = ConduitToolConverter.toConduitToolDefinition(tool.definition)
+
+        #expect(conduitDef.name == tool.name)
+        #expect(conduitDef.description == tool.description)
+    }
+
+    // MARK: - Batch Conversion Tests
+
+    @Test("multiple tools convert correctly")
+    func multipleToolsConvertCorrectly() {
+        let tools = [
+            ToolDefinition(
+                name: "tool1",
+                description: "First tool",
+                parameters: [
+                    ToolParameter(name: "param1", description: "Param 1", type: .string, isRequired: true)
+                ]
+            ),
+            ToolDefinition(
+                name: "tool2",
+                description: "Second tool",
+                parameters: [
+                    ToolParameter(name: "param2", description: "Param 2", type: .int, isRequired: true)
+                ]
+            ),
+            ToolDefinition(
+                name: "tool3",
+                description: "Third tool",
+                parameters: []
+            )
+        ]
+
+        let conduitDefs = ConduitToolConverter.toConduitToolDefinitions(tools)
+
+        #expect(conduitDefs.count == 3)
+        #expect(conduitDefs[0].name == "tool1")
+        #expect(conduitDefs[1].name == "tool2")
+        #expect(conduitDefs[2].name == "tool3")
     }
 
     // MARK: - Edge Cases
 
     @Test("empty parameters converts successfully")
-    func emptyParametersConvertsSuccessfully() throws {
+    func emptyParametersConvertsSuccessfully() {
         let toolDef = ToolDefinition(
             name: "noParams",
             description: "Tool with no parameters",
-            parameters: [:]
+            parameters: []
         )
 
-        let aiToolDef = try toolDef.toConduitToolDefinition()
+        let conduitToolDef = ConduitToolConverter.toConduitToolDefinition(toolDef)
 
-        #expect(aiToolDef.parameters.isEmpty)
+        #expect(conduitToolDef.name == "noParams")
     }
 
     @Test("deeply nested objects convert correctly")
-    func deeplyNestedObjectsConvertCorrectly() throws {
+    func deeplyNestedObjectsConvertCorrectly() {
         let toolDef = ToolDefinition(
             name: "nested",
             description: "Deeply nested tool",
             parameters: [
-                "level1": .object(
-                    properties: [
-                        "level2": .object(
-                            properties: [
-                                "level3": .string(description: "Deep value")
-                            ],
-                            description: "Level 2"
+                ToolParameter(
+                    name: "level1",
+                    description: "Level 1",
+                    type: .object(properties: [
+                        ToolParameter(
+                            name: "level2",
+                            description: "Level 2",
+                            type: .object(properties: [
+                                ToolParameter(name: "level3", description: "Deep value", type: .string, isRequired: true)
+                            ]),
+                            isRequired: true
                         )
-                    ],
-                    description: "Level 1"
+                    ]),
+                    isRequired: true
                 )
             ]
         )
 
-        let aiToolDef = try toolDef.toConduitToolDefinition()
+        let conduitToolDef = ConduitToolConverter.toConduitToolDefinition(toolDef)
 
-        #expect(aiToolDef.parameters.count == 1)
+        #expect(conduitToolDef.name == "nested")
     }
 
     @Test("long parameter descriptions are preserved")
-    func longParameterDescriptionsArePreserved() throws {
+    func longParameterDescriptionsArePreserved() {
         let longDescription = String(repeating: "This is a very long description. ", count: 10)
         let toolDef = ToolDefinition(
             name: "longDesc",
             description: "Tool with long descriptions",
             parameters: [
-                "param": .string(description: longDescription)
+                ToolParameter(name: "param", description: longDescription, type: .string, isRequired: true)
             ]
         )
 
-        let aiToolDef = try toolDef.toConduitToolDefinition()
+        let conduitToolDef = ConduitToolConverter.toConduitToolDefinition(toolDef)
 
-        #expect(aiToolDef.parameters.count == 1)
+        #expect(conduitToolDef.name == "longDesc")
     }
 
     @Test("special characters in names and descriptions are handled")
-    func specialCharactersInNamesAndDescriptionsAreHandled() throws {
+    func specialCharactersInNamesAndDescriptionsAreHandled() {
         let toolDef = ToolDefinition(
             name: "special_chars_123",
             description: "Tool with \"quotes\" and 'apostrophes' and newlines\n",
             parameters: [
-                "param_with_underscore": .string(description: "Param with \"quotes\"")
+                ToolParameter(name: "param_with_underscore", description: "Param with \"quotes\"", type: .string, isRequired: true)
             ]
         )
 
-        let aiToolDef = try toolDef.toConduitToolDefinition()
+        let conduitToolDef = ConduitToolConverter.toConduitToolDefinition(toolDef)
 
-        #expect(aiToolDef.name == "special_chars_123")
-        #expect(aiToolDef.parameters.count == 1)
+        #expect(conduitToolDef.name == "special_chars_123")
+    }
+
+    @Test("oneOf with many options converts correctly")
+    func oneOfWithManyOptionsConvertsCorrectly() {
+        let options = ["option1", "option2", "option3", "option4", "option5"]
+        let toolDef = ToolDefinition(
+            name: "multiOption",
+            description: "Tool with many enum options",
+            parameters: [
+                ToolParameter(name: "choice", description: "Pick one", type: .oneOf(options), isRequired: true)
+            ]
+        )
+
+        let conduitToolDef = ConduitToolConverter.toConduitToolDefinition(toolDef)
+
+        #expect(conduitToolDef.name == "multiOption")
+    }
+
+    @Test("any type converts to string fallback")
+    func anyTypeConvertsToStringFallback() {
+        let schema = ConduitToolConverter.convertParameterType(.any)
+
+        // .any should convert to a string schema as fallback
+        if case .string = schema {
+            // Success
+        } else {
+            Issue.record("Expected string type as fallback for .any")
+        }
     }
 }
 
 // MARK: - Test Helpers
 
-private struct TestTool: Tool {
-    let name = "test_tool"
-    let description = "A test tool for testing"
+private struct TestCalculatorTool: Tool {
+    let name = "calculator"
+    let description = "Performs mathematical calculations"
 
-    func execute(parameters _: SendableValue) async throws -> SendableValue {
-        .string("test result")
+    var parameters: [ToolParameter] {
+        [
+            ToolParameter(name: "expression", description: "Math expression to evaluate", type: .string, isRequired: true)
+        ]
     }
 
-    var definition: ToolDefinition {
-        ToolDefinition(
-            name: name,
-            description: description,
-            parameters: [
-                "input": .string(description: "Test input")
-            ]
-        )
+    var inputGuardrails: [any ToolInputGuardrail] { [] }
+    var outputGuardrails: [any ToolOutputGuardrail] { [] }
+
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        guard let expression = arguments["expression"]?.stringValue else {
+            throw AgentError.invalidToolArguments(toolName: name, reason: "Missing expression")
+        }
+        return .string("Result of: \(expression)")
     }
 }

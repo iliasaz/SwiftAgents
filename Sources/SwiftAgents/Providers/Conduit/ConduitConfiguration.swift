@@ -9,7 +9,7 @@ import Foundation
 // MARK: - ConduitConfigurationError
 
 /// Errors that can occur during Conduit configuration.
-public enum ConduitConfigurationError: Error, Sendable, LocalizedError {
+public enum ConduitConfigurationError: Error, Sendable, LocalizedError, Equatable {
     /// The API key is empty or contains only whitespace.
     case emptyAPIKey
 
@@ -131,11 +131,22 @@ public struct ConduitRetryStrategy: Sendable, Equatable {
     // MARK: - Delay Calculation
 
     /// Calculates the delay for a given retry attempt.
+    ///
+    /// Uses exponential backoff: `baseDelay * pow(backoffMultiplier, attempt - 1)`,
+    /// capped at `maxDelay`.
+    ///
+    /// - Note: The exponent is capped at 62 to prevent floating-point overflow.
+    ///   With a multiplier of 2.0, `pow(2.0, 63)` exceeds `Double.greatestFiniteMagnitude`
+    ///   (approximately 1.8e308). Since `pow(2.0, 62)` ≈ 4.6e18 is still finite but
+    ///   astronomically large, and typical `maxDelay` values are much smaller,
+    ///   this cap ensures numerical stability without affecting practical behavior.
+    ///
     /// - Parameter attempt: The retry attempt number (1-indexed).
     /// - Returns: The delay in seconds before the next retry.
     public func delay(forAttempt attempt: Int) -> TimeInterval {
         guard attempt > 0 else { return baseDelay }
-        let exponent = Double(min(attempt - 1, 62)) // Prevent overflow
+        // Cap exponent at 62 to prevent overflow: pow(2.0, 63) > Double.greatestFiniteMagnitude
+        let exponent = Double(min(attempt - 1, 62))
         let exponentialDelay = baseDelay * pow(backoffMultiplier, exponent)
         guard exponentialDelay.isFinite else { return maxDelay }
         return min(exponentialDelay, maxDelay)

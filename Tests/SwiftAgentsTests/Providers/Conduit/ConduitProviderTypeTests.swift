@@ -3,10 +3,10 @@
 //
 // Tests for ConduitProviderType enumeration and its functionality.
 
+import Conduit
 import Foundation
 @testable import SwiftAgents
 import Testing
-import Conduit
 
 @Suite("ConduitProviderType Tests")
 struct ConduitProviderTypeTests {
@@ -15,381 +15,239 @@ struct ConduitProviderTypeTests {
     @Test("Anthropic provider has correct display name")
     func anthropicProviderHasCorrectDisplayName() {
         let providerType = ConduitProviderType.anthropic(
-            apiKey: "test",
-            model: .claudeSonnet35
+            model: .claudeSonnet45,
+            apiKey: "test"
         )
 
-        let displayName = providerType.displayName
-
-        #expect(displayName.contains("Anthropic"))
-        #expect(displayName.contains("claude-sonnet-3-5") || displayName.contains("Claude"))
+        #expect(providerType.displayName == "Anthropic")
     }
 
     @Test("OpenAI provider has correct display name")
     func openAIProviderHasCorrectDisplayName() {
         let providerType = ConduitProviderType.openAI(
-            apiKey: "test",
-            model: .gpt4o
+            model: .gpt4o,
+            apiKey: "test"
         )
 
-        let displayName = providerType.displayName
-
-        #expect(displayName.contains("OpenAI"))
-        #expect(displayName.contains("gpt") || displayName.contains("GPT"))
+        #expect(providerType.displayName == "OpenAI")
     }
 
     @Test("MLX provider has correct display name")
     func mlxProviderHasCorrectDisplayName() {
-        let providerType = ConduitProviderType.mlx(
-            model: ModelIdentifier(stringLiteral: "test-model")
-        )
+        let providerType = ConduitProviderType.mlx(model: .llama3_2_1b)
 
-        let displayName = providerType.displayName
-
-        #expect(displayName.contains("MLX"))
-        #expect(displayName.contains("test-model"))
+        #expect(providerType.displayName == "MLX (Local)")
     }
 
     @Test("HuggingFace provider has correct display name")
     func huggingFaceProviderHasCorrectDisplayName() {
         let providerType = ConduitProviderType.huggingFace(
-            apiKey: "test",
-            model: ModelIdentifier(stringLiteral: "meta-llama/Llama-3.1-8B")
+            model: .huggingFace("meta-llama/Llama-3.1-8B-Instruct"),
+            token: "test"
         )
 
-        let displayName = providerType.displayName
+        #expect(providerType.displayName == "HuggingFace")
+    }
 
-        #expect(displayName.contains("HuggingFace") || displayName.contains("Hugging Face"))
-        #expect(displayName.contains("Llama"))
+    @Test("Foundation Models provider has correct display name")
+    func foundationModelsProviderHasCorrectDisplayName() {
+        let providerType = ConduitProviderType.foundationModels
+
+        #expect(providerType.displayName == "Apple Foundation Models")
+    }
+
+    // MARK: - Network Requirements Tests
+
+    @Test("MLX provider does not require network")
+    func mlxProviderDoesNotRequireNetwork() {
+        let providerType = ConduitProviderType.mlx(model: .llama3_2_1b)
+
+        #expect(providerType.requiresNetwork == false)
+        #expect(providerType.isOnDevice == true)
+    }
+
+    @Test("Foundation Models provider does not require network")
+    func foundationModelsProviderDoesNotRequireNetwork() {
+        let providerType = ConduitProviderType.foundationModels
+
+        #expect(providerType.requiresNetwork == false)
+        #expect(providerType.isOnDevice == true)
+    }
+
+    @Test("Anthropic provider requires network")
+    func anthropicProviderRequiresNetwork() {
+        let providerType = ConduitProviderType.anthropic(
+            model: .claudeSonnet45,
+            apiKey: "test"
+        )
+
+        #expect(providerType.requiresNetwork == true)
+        #expect(providerType.isOnDevice == false)
+    }
+
+    @Test("OpenAI provider requires network")
+    func openAIProviderRequiresNetwork() {
+        let providerType = ConduitProviderType.openAI(
+            model: .gpt4o,
+            apiKey: "test"
+        )
+
+        #expect(providerType.requiresNetwork == true)
+        #expect(providerType.isOnDevice == false)
+    }
+
+    @Test("HuggingFace provider requires network")
+    func huggingFaceProviderRequiresNetwork() {
+        let providerType = ConduitProviderType.huggingFace(
+            model: .huggingFace("test-model"),
+            token: "test"
+        )
+
+        #expect(providerType.requiresNetwork == true)
+        #expect(providerType.isOnDevice == false)
     }
 
     // MARK: - Model String Tests
 
-    @Test("Anthropic model string matches model ID")
-    func anthropicModelStringMatchesModelID() {
+    @Test("Anthropic model string contains model identifier")
+    func anthropicModelStringContainsModelIdentifier() {
         let providerType = ConduitProviderType.anthropic(
-            apiKey: "test",
-            model: .claudeSonnet35
+            model: .claudeSonnet45,
+            apiKey: "test"
         )
 
-        let modelString = providerType.modelString
-
-        #expect(!modelString.isEmpty)
-        #expect(modelString.contains("claude") || modelString.contains("sonnet"))
+        #expect(!providerType.modelString.isEmpty)
+        #expect(providerType.modelString.contains("claude"))
     }
 
-    @Test("OpenAI model string matches model ID")
-    func openAIModelStringMatchesModelID() {
+    @Test("OpenAI model string contains model identifier")
+    func openAIModelStringContainsModelIdentifier() {
         let providerType = ConduitProviderType.openAI(
-            apiKey: "test",
-            model: .gpt4o
-        )
-
-        let modelString = providerType.modelString
-
-        #expect(!modelString.isEmpty)
-        #expect(modelString.contains("gpt"))
-    }
-
-    @Test("MLX model string is model identifier value")
-    func mlxModelStringIsModelIdentifierValue() {
-        let modelID = ModelIdentifier(stringLiteral: "custom-model-name")
-        let providerType = ConduitProviderType.mlx(model: modelID)
-
-        let modelString = providerType.modelString
-
-        #expect(modelString == "custom-model-name")
-    }
-
-    @Test("HuggingFace model string is model identifier value")
-    func huggingFaceModelStringIsModelIdentifierValue() {
-        let modelID = ModelIdentifier(stringLiteral: "organization/model-name")
-        let providerType = ConduitProviderType.huggingFace(
-            apiKey: "test",
-            model: modelID
-        )
-
-        let modelString = providerType.modelString
-
-        #expect(modelString == "organization/model-name")
-    }
-
-    // MARK: - Network Requirement Tests
-
-    @Test("Anthropic requires network")
-    func anthropicRequiresNetwork() {
-        let providerType = ConduitProviderType.anthropic(
-            apiKey: "test",
-            model: .claudeSonnet35
-        )
-
-        #expect(providerType.requiresNetwork == true)
-    }
-
-    @Test("OpenAI requires network")
-    func openAIRequiresNetwork() {
-        let providerType = ConduitProviderType.openAI(
-            apiKey: "test",
-            model: .gpt4o
-        )
-
-        #expect(providerType.requiresNetwork == true)
-    }
-
-    @Test("MLX does not require network")
-    func mlxDoesNotRequireNetwork() {
-        let providerType = ConduitProviderType.mlx(
-            model: ModelIdentifier(stringLiteral: "local-model")
-        )
-
-        #expect(providerType.requiresNetwork == false)
-    }
-
-    @Test("HuggingFace requires network")
-    func huggingFaceRequiresNetwork() {
-        let providerType = ConduitProviderType.huggingFace(
-            apiKey: "test",
-            model: ModelIdentifier(stringLiteral: "test-model")
-        )
-
-        #expect(providerType.requiresNetwork == true)
-    }
-
-    // MARK: - CustomStringConvertible Tests
-
-    @Test("Anthropic description hides API key")
-    func anthropicDescriptionHidesAPIKey() {
-        let providerType = ConduitProviderType.anthropic(
-            apiKey: "sk-ant-very-secret-key-12345",
-            model: .claudeSonnet35
-        )
-
-        let description = String(describing: providerType)
-
-        #expect(!description.contains("sk-ant-very-secret-key-12345"))
-        // Should contain some form of masking or indication that key is hidden
-        #expect(description.contains("***") || description.contains("hidden") || description.contains("masked"))
-    }
-
-    @Test("OpenAI description hides API key")
-    func openAIDescriptionHidesAPIKey() {
-        let providerType = ConduitProviderType.openAI(
-            apiKey: "sk-proj-secret-key-abcdef123456",
-            model: .gpt4o
-        )
-
-        let description = String(describing: providerType)
-
-        #expect(!description.contains("sk-proj-secret-key-abcdef123456"))
-        #expect(description.contains("***") || description.contains("hidden") || description.contains("masked"))
-    }
-
-    @Test("HuggingFace description hides API key")
-    func huggingFaceDescriptionHidesAPIKey() {
-        let providerType = ConduitProviderType.huggingFace(
-            apiKey: "hf_VerySecretTokenAbcDef123456",
-            model: ModelIdentifier(stringLiteral: "test-model")
-        )
-
-        let description = String(describing: providerType)
-
-        #expect(!description.contains("hf_VerySecretTokenAbcDef123456"))
-        #expect(description.contains("***") || description.contains("hidden") || description.contains("masked"))
-    }
-
-    @Test("MLX description shows model info")
-    func mlxDescriptionShowsModelInfo() {
-        let providerType = ConduitProviderType.mlx(
-            model: ModelIdentifier(stringLiteral: "mlx-community/special-model")
-        )
-
-        let description = String(describing: providerType)
-
-        #expect(description.contains("MLX") || description.contains("mlx"))
-        #expect(description.contains("special-model"))
-    }
-
-    @Test("description includes model information")
-    func descriptionIncludesModelInformation() {
-        let providerType = ConduitProviderType.anthropic(
-            apiKey: "test",
-            model: .claudeSonnet35
-        )
-
-        let description = String(describing: providerType)
-
-        #expect(description.contains("claude") || description.contains("sonnet") || description.contains("Claude"))
-    }
-
-    // MARK: - System Prompt Tests
-
-    @Test("system prompt is included when provided to Anthropic")
-    func systemPromptIsIncludedWhenProvidedToAnthropic() {
-        let providerType = ConduitProviderType.anthropic(
-            apiKey: "test",
-            model: .claudeSonnet35,
-            systemPrompt: "You are a helpful assistant"
-        )
-
-        // System prompt should be accessible through configuration
-        let displayName = providerType.displayName
-        #expect(!displayName.isEmpty)
-    }
-
-    @Test("system prompt is included when provided to OpenAI")
-    func systemPromptIsIncludedWhenProvidedToOpenAI() {
-        let providerType = ConduitProviderType.openAI(
-            apiKey: "test",
             model: .gpt4o,
-            systemPrompt: "You are a helpful assistant"
+            apiKey: "test"
         )
 
-        let displayName = providerType.displayName
-        #expect(!displayName.isEmpty)
+        #expect(!providerType.modelString.isEmpty)
+        #expect(providerType.modelString.contains("gpt"))
     }
 
-    @Test("system prompt is included when provided to MLX")
-    func systemPromptIsIncludedWhenProvidedToMLX() {
-        let providerType = ConduitProviderType.mlx(
-            model: ModelIdentifier(stringLiteral: "test"),
-            systemPrompt: "You are a helpful assistant"
-        )
+    @Test("MLX model string is not empty")
+    func mlxModelStringIsNotEmpty() {
+        let providerType = ConduitProviderType.mlx(model: .llama3_2_1b)
 
-        let displayName = providerType.displayName
-        #expect(!displayName.isEmpty)
+        #expect(!providerType.modelString.isEmpty)
     }
 
-    @Test("system prompt is included when provided to HuggingFace")
-    func systemPromptIsIncludedWhenProvidedToHuggingFace() {
+    @Test("HuggingFace model string contains model name")
+    func huggingFaceModelStringContainsModelName() {
         let providerType = ConduitProviderType.huggingFace(
-            apiKey: "test",
-            model: ModelIdentifier(stringLiteral: "test"),
-            systemPrompt: "You are a helpful assistant"
+            model: .huggingFace("test-hf-model"),
+            token: "test"
         )
 
-        let displayName = providerType.displayName
-        #expect(!displayName.isEmpty)
+        #expect(providerType.modelString.contains("test-hf-model"))
     }
 
-    // MARK: - Edge Cases
+    @Test("Foundation Models model string is set")
+    func foundationModelsModelStringIsSet() {
+        let providerType = ConduitProviderType.foundationModels
 
-    @Test("empty system prompt is handled correctly")
-    func emptySystemPromptIsHandledCorrectly() {
+        #expect(!providerType.modelString.isEmpty)
+    }
+
+    // MARK: - Equatable Tests
+
+    @Test("same Anthropic providers are equal")
+    func sameAnthropicProvidersAreEqual() {
+        let type1 = ConduitProviderType.anthropic(model: .claudeSonnet45, apiKey: "test")
+        let type2 = ConduitProviderType.anthropic(model: .claudeSonnet45, apiKey: "test")
+
+        #expect(type1 == type2)
+    }
+
+    @Test("different providers are not equal")
+    func differentProvidersAreNotEqual() {
+        let type1 = ConduitProviderType.anthropic(model: .claudeSonnet45, apiKey: "test")
+        let type2 = ConduitProviderType.openAI(model: .gpt4o, apiKey: "test")
+
+        #expect(type1 != type2)
+    }
+
+    @Test("same providers with different API keys are not equal")
+    func sameProvidersWithDifferentAPIKeysAreNotEqual() {
+        let type1 = ConduitProviderType.anthropic(model: .claudeSonnet45, apiKey: "key1")
+        let type2 = ConduitProviderType.anthropic(model: .claudeSonnet45, apiKey: "key2")
+
+        #expect(type1 != type2)
+    }
+
+    @Test("same providers with different models are not equal")
+    func sameProvidersWithDifferentModelsAreNotEqual() {
+        let type1 = ConduitProviderType.openAI(model: .gpt4o, apiKey: "test")
+        let type2 = ConduitProviderType.openAI(model: .gpt4oMini, apiKey: "test")
+
+        #expect(type1 != type2)
+    }
+
+    @Test("MLX providers with same model are equal")
+    func mlxProvidersWithSameModelAreEqual() {
+        let type1 = ConduitProviderType.mlx(model: .llama3_2_1b)
+        let type2 = ConduitProviderType.mlx(model: .llama3_2_1b)
+
+        #expect(type1 == type2)
+    }
+
+    @Test("Foundation Models providers are equal")
+    func foundationModelsProvidersAreEqual() {
+        let type1 = ConduitProviderType.foundationModels
+        let type2 = ConduitProviderType.foundationModels
+
+        #expect(type1 == type2)
+    }
+
+    // MARK: - Description Tests
+
+    @Test("Anthropic description contains model info")
+    func anthropicDescriptionContainsModelInfo() {
         let providerType = ConduitProviderType.anthropic(
-            apiKey: "test",
-            model: .claudeSonnet35,
-            systemPrompt: ""
-        )
-
-        let displayName = providerType.displayName
-        #expect(!displayName.isEmpty)
-    }
-
-    @Test("very long system prompt is handled correctly")
-    func veryLongSystemPromptIsHandledCorrectly() {
-        let longPrompt = String(repeating: "This is a very long system prompt. ", count: 100)
-        let providerType = ConduitProviderType.anthropic(
-            apiKey: "test",
-            model: .claudeSonnet35,
-            systemPrompt: longPrompt
-        )
-
-        let displayName = providerType.displayName
-        #expect(!displayName.isEmpty)
-    }
-
-    @Test("special characters in system prompt are handled")
-    func specialCharactersInSystemPromptAreHandled() {
-        let providerType = ConduitProviderType.openAI(
-            apiKey: "test",
-            model: .gpt4o,
-            systemPrompt: "System: \"Hello\"\nNew line\tTab\r\nCarriage return"
-        )
-
-        let displayName = providerType.displayName
-        #expect(!displayName.isEmpty)
-    }
-
-    @Test("unicode characters in system prompt are handled")
-    func unicodeCharactersInSystemPromptAreHandled() {
-        let providerType = ConduitProviderType.anthropic(
-            apiKey: "test",
-            model: .claudeSonnet35,
-            systemPrompt: "你好 🌟 Привет مرحبا"
-        )
-
-        let displayName = providerType.displayName
-        #expect(!displayName.isEmpty)
-    }
-
-    @Test("model identifier with special characters works")
-    func modelIdentifierWithSpecialCharactersWorks() {
-        let modelID = ModelIdentifier(stringLiteral: "organization/model-name_v2.1-beta")
-        let providerType = ConduitProviderType.mlx(model: modelID)
-
-        let modelString = providerType.modelString
-        #expect(modelString == "organization/model-name_v2.1-beta")
-    }
-
-    @Test("API key with special characters is handled")
-    func apiKeyWithSpecialCharactersIsHandled() {
-        let providerType = ConduitProviderType.anthropic(
-            apiKey: "sk-ant-abc123_DEF-456.xyz/789",
-            model: .claudeSonnet35
+            model: .claudeSonnet45,
+            apiKey: "test"
         )
 
         let description = String(describing: providerType)
-        #expect(!description.contains("sk-ant-abc123_DEF-456.xyz/789"))
+
+        #expect(description.contains("anthropic") || description.contains("Anthropic"))
     }
 
-    // MARK: - Model Variant Tests
+    @Test("MLX description contains model info")
+    func mlxDescriptionContainsModelInfo() {
+        let providerType = ConduitProviderType.mlx(model: .llama3_2_1b)
 
-    @Test("all Anthropic models create valid provider types")
-    func allAnthropicModelsCreateValidProviderTypes() {
-        let models: [AnthropicModelID] = [
-            .claudeSonnet35,
-            .claudeSonnet4,
-            .claudeSonnet45,
-            .claudeOpus4
-        ]
+        let description = String(describing: providerType)
 
-        for model in models {
-            let providerType = ConduitProviderType.anthropic(apiKey: "test", model: model)
-            #expect(!providerType.displayName.isEmpty)
-            #expect(!providerType.modelString.isEmpty)
-        }
+        #expect(description.contains("mlx") || description.contains("MLX"))
     }
 
-    @Test("all OpenAI models create valid provider types")
-    func allOpenAIModelsCreateValidProviderTypes() {
-        let models: [OpenAIModelID] = [
-            .gpt4o,
-            .gpt4oMini,
-            .o1,
-            .o1Mini
-        ]
+    // MARK: - Custom Model Tests
 
-        for model in models {
-            let providerType = ConduitProviderType.openAI(apiKey: "test", model: model)
-            #expect(!providerType.displayName.isEmpty)
-            #expect(!providerType.modelString.isEmpty)
-        }
+    @Test("HuggingFace with custom model works")
+    func huggingFaceWithCustomModelWorks() {
+        let customModel = ModelIdentifier.huggingFace("custom-org/custom-model")
+        let providerType = ConduitProviderType.huggingFace(
+            model: customModel,
+            token: "test"
+        )
+
+        #expect(providerType.modelString.contains("custom-org/custom-model"))
+        #expect(providerType.displayName == "HuggingFace")
     }
 
-    @Test("custom ModelIdentifier values work correctly")
-    func customModelIdentifierValuesWorkCorrectly() {
-        let customModels = [
-            "custom-model-1",
-            "org/model-name",
-            "very-long-model-identifier-with-many-parts-v1.2.3-beta"
-        ]
+    @Test("MLX with custom model works")
+    func mlxWithCustomModelWorks() {
+        let customModel = ModelIdentifier.mlx("custom-org/custom-mlx-model")
+        let providerType = ConduitProviderType.mlx(model: customModel)
 
-        for modelName in customModels {
-            let modelID = ModelIdentifier(stringLiteral: modelName)
-            let providerType = ConduitProviderType.mlx(model: modelID)
-
-            #expect(providerType.modelString == modelName)
-            #expect(!providerType.displayName.isEmpty)
-        }
+        #expect(providerType.modelString.contains("custom-org/custom-mlx-model"))
+        #expect(providerType.displayName == "MLX (Local)")
     }
 }

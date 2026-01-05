@@ -3,162 +3,152 @@
 //
 // Comprehensive tests for ConduitConfiguration validation and factory methods.
 
+import Conduit
 import Foundation
 @testable import SwiftAgents
 import Testing
 
 @Suite("ConduitConfiguration Tests")
 struct ConduitConfigurationTests {
-    // MARK: - Validation Tests
+    // MARK: - Validation Tests (Validation happens in throwing init)
 
-    @Test("valid configuration passes validation")
-    func validConfigurationPassesValidation() throws {
-        let config = ConduitConfiguration(
+    @Test("valid Anthropic configuration passes validation")
+    func validAnthropicConfigurationPassesValidation() throws {
+        let config = try ConduitConfiguration.anthropic(
             apiKey: "test-api-key",
-            timeout: 30,
-            maxRetries: 3,
-            temperature: 0.7,
-            topP: 0.9,
-            topK: 50,
-            retryStrategy: .default
-        )
-
-        try config.validate()
-        // No error thrown means success
-    }
-
-    @Test("empty API key throws invalidAPIKey")
-    func emptyAPIKeyThrowsError() throws {
-        let config = ConduitConfiguration(
-            apiKey: "",
+            model: .claudeSonnet45,
+            systemPrompt: "You are helpful",
             timeout: 30,
             maxRetries: 3
         )
 
-        #expect(throws: ConduitConfiguration.ValidationError.invalidAPIKey) {
-            try config.validate()
+        #expect(config.providerType.displayName == "Anthropic")
+        #expect(config.timeout == 30)
+        #expect(config.maxRetries == 3)
+    }
+
+    @Test("empty API key throws emptyAPIKey")
+    func emptyAPIKeyThrowsError() throws {
+        #expect(throws: ConduitConfigurationError.emptyAPIKey) {
+            _ = try ConduitConfiguration.anthropic(
+                apiKey: "",
+                model: .claudeSonnet45
+            )
         }
     }
 
-    @Test("whitespace-only API key throws invalidAPIKey")
+    @Test("whitespace-only API key throws emptyAPIKey")
     func whitespaceOnlyAPIKeyThrowsError() throws {
-        let config = ConduitConfiguration(
-            apiKey: "   ",
-            timeout: 30,
-            maxRetries: 3
-        )
-
-        #expect(throws: ConduitConfiguration.ValidationError.invalidAPIKey) {
-            try config.validate()
+        #expect(throws: ConduitConfigurationError.emptyAPIKey) {
+            _ = try ConduitConfiguration.anthropic(
+                apiKey: "   ",
+                model: .claudeSonnet45
+            )
         }
     }
 
     @Test("negative timeout throws invalidTimeout")
     func negativeTimeoutThrowsError() throws {
-        let config = ConduitConfiguration(
-            apiKey: "test-key",
-            timeout: -1,
-            maxRetries: 3
-        )
-
-        #expect(throws: ConduitConfiguration.ValidationError.invalidTimeout) {
-            try config.validate()
+        #expect(throws: ConduitConfigurationError.invalidTimeout(-1)) {
+            _ = try ConduitConfiguration(
+                providerType: .foundationModels,
+                timeout: -1,
+                maxRetries: 3
+            )
         }
     }
 
     @Test("zero timeout throws invalidTimeout")
     func zeroTimeoutThrowsError() throws {
-        let config = ConduitConfiguration(
-            apiKey: "test-key",
-            timeout: 0,
-            maxRetries: 3
-        )
-
-        #expect(throws: ConduitConfiguration.ValidationError.invalidTimeout) {
-            try config.validate()
+        #expect(throws: ConduitConfigurationError.invalidTimeout(0)) {
+            _ = try ConduitConfiguration(
+                providerType: .foundationModels,
+                timeout: 0,
+                maxRetries: 3
+            )
         }
     }
 
     @Test("negative max retries throws invalidMaxRetries")
     func negativeMaxRetriesThrowsError() throws {
-        let config = ConduitConfiguration(
-            apiKey: "test-key",
-            timeout: 30,
-            maxRetries: -1
-        )
-
-        #expect(throws: ConduitConfiguration.ValidationError.invalidMaxRetries) {
-            try config.validate()
+        #expect(throws: ConduitConfigurationError.invalidMaxRetries(-1)) {
+            _ = try ConduitConfiguration(
+                providerType: .foundationModels,
+                timeout: 30,
+                maxRetries: -1
+            )
         }
     }
 
     @Test("temperature below 0 throws invalidTemperature")
     func temperatureBelowZeroThrowsError() throws {
-        let config = ConduitConfiguration(
-            apiKey: "test-key",
-            timeout: 30,
-            maxRetries: 3,
-            temperature: -0.1
-        )
-
-        #expect(throws: ConduitConfiguration.ValidationError.invalidTemperature) {
-            try config.validate()
+        #expect(throws: ConduitConfigurationError.invalidTemperature(-0.1)) {
+            _ = try ConduitConfiguration(
+                providerType: .foundationModels,
+                timeout: 30,
+                maxRetries: 3,
+                temperature: -0.1
+            )
         }
     }
 
     @Test("temperature above 2 throws invalidTemperature")
     func temperatureAboveTwoThrowsError() throws {
-        let config = ConduitConfiguration(
-            apiKey: "test-key",
-            timeout: 30,
-            maxRetries: 3,
-            temperature: 2.1
-        )
-
-        #expect(throws: ConduitConfiguration.ValidationError.invalidTemperature) {
-            try config.validate()
+        #expect(throws: ConduitConfigurationError.invalidTemperature(2.1)) {
+            _ = try ConduitConfiguration(
+                providerType: .foundationModels,
+                timeout: 30,
+                maxRetries: 3,
+                temperature: 2.1
+            )
         }
     }
 
-    @Test("topP below 0 throws invalidTopP")
-    func topPBelowZeroThrowsError() throws {
-        let config = ConduitConfiguration(
-            apiKey: "test-key",
-            timeout: 30,
-            maxRetries: 3,
-            topP: -0.1
-        )
-
-        #expect(throws: ConduitConfiguration.ValidationError.invalidTopP) {
-            try config.validate()
+    @Test("topP at 0 throws invalidTopP")
+    func topPAtZeroThrowsError() throws {
+        #expect(throws: ConduitConfigurationError.invalidTopP(0.0)) {
+            _ = try ConduitConfiguration(
+                providerType: .foundationModels,
+                timeout: 30,
+                maxRetries: 3,
+                topP: 0.0
+            )
         }
     }
 
     @Test("topP above 1 throws invalidTopP")
     func topPAboveOneThrowsError() throws {
-        let config = ConduitConfiguration(
-            apiKey: "test-key",
-            timeout: 30,
-            maxRetries: 3,
-            topP: 1.1
-        )
-
-        #expect(throws: ConduitConfiguration.ValidationError.invalidTopP) {
-            try config.validate()
+        #expect(throws: ConduitConfigurationError.invalidTopP(1.1)) {
+            _ = try ConduitConfiguration(
+                providerType: .foundationModels,
+                timeout: 30,
+                maxRetries: 3,
+                topP: 1.1
+            )
         }
     }
 
     @Test("negative topK throws invalidTopK")
     func negativeTopKThrowsError() throws {
-        let config = ConduitConfiguration(
-            apiKey: "test-key",
-            timeout: 30,
-            maxRetries: 3,
-            topK: -1
-        )
+        #expect(throws: ConduitConfigurationError.invalidTopK(-1)) {
+            _ = try ConduitConfiguration(
+                providerType: .foundationModels,
+                timeout: 30,
+                maxRetries: 3,
+                topK: -1
+            )
+        }
+    }
 
-        #expect(throws: ConduitConfiguration.ValidationError.invalidTopK) {
-            try config.validate()
+    @Test("zero topK throws invalidTopK")
+    func zeroTopKThrowsError() throws {
+        #expect(throws: ConduitConfigurationError.invalidTopK(0)) {
+            _ = try ConduitConfiguration(
+                providerType: .foundationModels,
+                timeout: 30,
+                maxRetries: 3,
+                topK: 0
+            )
         }
     }
 
@@ -166,90 +156,145 @@ struct ConduitConfigurationTests {
 
     @Test("anthropic factory creates valid configuration")
     func anthropicFactoryCreatesValidConfiguration() throws {
-        let config = ConduitConfiguration.anthropic(apiKey: "test-anthropic-key")
+        let config = try ConduitConfiguration.anthropic(
+            apiKey: "test-anthropic-key",
+            model: .claudeSonnet45
+        )
 
-        #expect(config.apiKey == "test-anthropic-key")
-        try config.validate()
+        #expect(config.providerType.displayName == "Anthropic")
+        #expect(config.providerType.modelString.contains("claude-sonnet"))
     }
 
     @Test("openAI factory creates valid configuration")
     func openAIFactoryCreatesValidConfiguration() throws {
-        let config = ConduitConfiguration.openAI(apiKey: "test-openai-key")
+        let config = try ConduitConfiguration.openAI(
+            apiKey: "test-openai-key",
+            model: .gpt4o
+        )
 
-        #expect(config.apiKey == "test-openai-key")
-        try config.validate()
+        #expect(config.providerType.displayName == "OpenAI")
+        #expect(config.providerType.modelString == "gpt-4o")
     }
 
     @Test("mlx factory creates valid configuration")
     func mlxFactoryCreatesValidConfiguration() throws {
-        let config = ConduitConfiguration.mlx()
+        let config = try ConduitConfiguration.mlx(
+            model: .llama3_2_1b
+        )
 
-        #expect(config.apiKey == "local")
-        try config.validate()
+        #expect(config.providerType.displayName == "MLX (Local)")
+        #expect(config.providerType.isOnDevice == true)
     }
 
     @Test("huggingFace factory creates valid configuration")
     func huggingFaceFactoryCreatesValidConfiguration() throws {
-        let config = ConduitConfiguration.huggingFace(apiKey: "test-hf-key")
+        let config = try ConduitConfiguration.huggingFace(
+            token: "test-hf-token",
+            model: .huggingFace("meta-llama/Llama-3.1-8B-Instruct")
+        )
 
-        #expect(config.apiKey == "test-hf-key")
-        try config.validate()
+        #expect(config.providerType.displayName == "HuggingFace")
+    }
+
+    @Test("foundationModels factory creates valid configuration")
+    func foundationModelsFactoryCreatesValidConfiguration() throws {
+        let config = try ConduitConfiguration.foundationModels(
+            systemPrompt: "You are helpful"
+        )
+
+        #expect(config.providerType.displayName == "Apple Foundation Models")
+        #expect(config.providerType.isOnDevice == true)
+        #expect(config.maxRetries == 0) // Foundation Models don't typically need retries
     }
 
     // MARK: - Retry Strategy Tests
 
     @Test("default retry strategy has sensible values")
     func defaultRetryStrategyHasSensibleValues() {
-        let strategy = ConduitConfiguration.RetryStrategy.default
+        let strategy = ConduitRetryStrategy.default
 
         #expect(strategy.maxRetries == 3)
-        #expect(strategy.initialDelay == 1.0)
-        #expect(strategy.maxDelay == 60.0)
-        #expect(strategy.multiplier == 2.0)
+        #expect(strategy.baseDelay == 1.0)
+        #expect(strategy.maxDelay == 30.0)
+        #expect(strategy.backoffMultiplier == 2.0)
     }
 
     @Test("none retry strategy has zero retries")
     func noneRetryStrategyHasZeroRetries() {
-        let strategy = ConduitConfiguration.RetryStrategy.none
+        let strategy = ConduitRetryStrategy.none
 
         #expect(strategy.maxRetries == 0)
     }
 
     @Test("aggressive retry strategy has high retry count")
     func aggressiveRetryStrategyHasHighRetryCount() {
-        let strategy = ConduitConfiguration.RetryStrategy.aggressive
+        let strategy = ConduitRetryStrategy.aggressive
 
         #expect(strategy.maxRetries == 5)
+        #expect(strategy.baseDelay == 0.5)
+        #expect(strategy.maxDelay == 60.0)
     }
 
     @Test("custom retry strategy allows configuration")
     func customRetryStrategyAllowsConfiguration() {
-        let strategy = ConduitConfiguration.RetryStrategy.custom(
+        let strategy = ConduitRetryStrategy(
             maxRetries: 10,
-            initialDelay: 2.0,
+            baseDelay: 2.0,
             maxDelay: 120.0,
-            multiplier: 3.0
+            backoffMultiplier: 3.0
         )
 
         #expect(strategy.maxRetries == 10)
-        #expect(strategy.initialDelay == 2.0)
+        #expect(strategy.baseDelay == 2.0)
         #expect(strategy.maxDelay == 120.0)
-        #expect(strategy.multiplier == 3.0)
+        #expect(strategy.backoffMultiplier == 3.0)
+    }
+
+    @Test("retry strategy calculates delay correctly")
+    func retryStrategyCalculatesDelayCorrectly() {
+        let strategy = ConduitRetryStrategy(
+            maxRetries: 5,
+            baseDelay: 1.0,
+            maxDelay: 30.0,
+            backoffMultiplier: 2.0
+        )
+
+        #expect(strategy.delay(forAttempt: 1) == 1.0)
+        #expect(strategy.delay(forAttempt: 2) == 2.0)
+        #expect(strategy.delay(forAttempt: 3) == 4.0)
+        #expect(strategy.delay(forAttempt: 4) == 8.0)
+        #expect(strategy.delay(forAttempt: 5) == 16.0)
+    }
+
+    @Test("retry strategy respects max delay")
+    func retryStrategyRespectsMaxDelay() {
+        let strategy = ConduitRetryStrategy(
+            maxRetries: 10,
+            baseDelay: 1.0,
+            maxDelay: 10.0,
+            backoffMultiplier: 2.0
+        )
+
+        // At attempt 5: 1 * 2^4 = 16, but max is 10
+        #expect(strategy.delay(forAttempt: 5) == 10.0)
+        #expect(strategy.delay(forAttempt: 10) == 10.0)
     }
 
     // MARK: - Equatable Tests
 
     @Test("identical configurations are equal")
-    func identicalConfigurationsAreEqual() {
-        let config1 = ConduitConfiguration(
-            apiKey: "test-key",
+    func identicalConfigurationsAreEqual() throws {
+        let config1 = try ConduitConfiguration(
+            providerType: .foundationModels,
+            systemPrompt: "Test",
             timeout: 30,
             maxRetries: 3,
             temperature: 0.7
         )
 
-        let config2 = ConduitConfiguration(
-            apiKey: "test-key",
+        let config2 = try ConduitConfiguration(
+            providerType: .foundationModels,
+            systemPrompt: "Test",
             timeout: 30,
             maxRetries: 3,
             temperature: 0.7
@@ -258,24 +303,24 @@ struct ConduitConfigurationTests {
         #expect(config1 == config2)
     }
 
-    @Test("different API keys make configurations not equal")
-    func differentAPIKeysMakeConfigurationsNotEqual() {
-        let config1 = ConduitConfiguration(apiKey: "key1", timeout: 30, maxRetries: 3)
-        let config2 = ConduitConfiguration(apiKey: "key2", timeout: 30, maxRetries: 3)
+    @Test("different provider types make configurations not equal")
+    func differentProviderTypesMakeConfigurationsNotEqual() throws {
+        let config1 = try ConduitConfiguration.foundationModels()
+        let config2 = try ConduitConfiguration.mlx(model: .llama3_2_1b)
 
         #expect(config1 != config2)
     }
 
     @Test("different temperatures make configurations not equal")
-    func differentTemperaturesMakeConfigurationsNotEqual() {
-        let config1 = ConduitConfiguration(
-            apiKey: "test-key",
+    func differentTemperaturesMakeConfigurationsNotEqual() throws {
+        let config1 = try ConduitConfiguration(
+            providerType: .foundationModels,
             timeout: 30,
             maxRetries: 3,
             temperature: 0.7
         )
-        let config2 = ConduitConfiguration(
-            apiKey: "test-key",
+        let config2 = try ConduitConfiguration(
+            providerType: .foundationModels,
             timeout: 30,
             maxRetries: 3,
             temperature: 0.8
@@ -288,39 +333,112 @@ struct ConduitConfigurationTests {
 
     @Test("maximum valid temperature is accepted")
     func maximumValidTemperatureIsAccepted() throws {
-        let config = ConduitConfiguration(
-            apiKey: "test-key",
+        let config = try ConduitConfiguration(
+            providerType: .foundationModels,
             timeout: 30,
             maxRetries: 3,
             temperature: 2.0
         )
 
-        try config.validate()
+        #expect(config.temperature == 2.0)
     }
 
     @Test("minimum valid temperature is accepted")
     func minimumValidTemperatureIsAccepted() throws {
-        let config = ConduitConfiguration(
-            apiKey: "test-key",
+        let config = try ConduitConfiguration(
+            providerType: .foundationModels,
             timeout: 30,
             maxRetries: 3,
             temperature: 0.0
         )
 
-        try config.validate()
+        #expect(config.temperature == 0.0)
     }
 
     @Test("nil optional parameters are accepted")
     func nilOptionalParametersAreAccepted() throws {
-        let config = ConduitConfiguration(
-            apiKey: "test-key",
+        let config = try ConduitConfiguration(
+            providerType: .foundationModels,
             timeout: 30,
             maxRetries: 3,
             temperature: nil,
             topP: nil,
-            topK: nil
+            topK: nil,
+            maxTokens: nil
         )
 
-        try config.validate()
+        #expect(config.temperature == nil)
+        #expect(config.topP == nil)
+        #expect(config.topK == nil)
+        #expect(config.maxTokens == nil)
+    }
+
+    @Test("system prompt is preserved")
+    func systemPromptIsPreserved() throws {
+        let systemPrompt = "You are a helpful assistant specialized in Swift programming."
+        let config = try ConduitConfiguration.foundationModels(
+            systemPrompt: systemPrompt
+        )
+
+        #expect(config.systemPrompt == systemPrompt)
+    }
+
+    // MARK: - Provider Type Properties
+
+    @Test("cloud providers require network")
+    func cloudProvidersRequireNetwork() throws {
+        let anthropicConfig = try ConduitConfiguration.anthropic(
+            apiKey: "test-key",
+            model: .claudeSonnet45
+        )
+        let openAIConfig = try ConduitConfiguration.openAI(
+            apiKey: "test-key",
+            model: .gpt4o
+        )
+
+        #expect(anthropicConfig.providerType.requiresNetwork == true)
+        #expect(openAIConfig.providerType.requiresNetwork == true)
+    }
+
+    @Test("local providers do not require network")
+    func localProvidersDoNotRequireNetwork() throws {
+        let mlxConfig = try ConduitConfiguration.mlx(model: .llama3_2_1b)
+        let fmConfig = try ConduitConfiguration.foundationModels()
+
+        #expect(mlxConfig.providerType.requiresNetwork == false)
+        #expect(fmConfig.providerType.requiresNetwork == false)
+    }
+
+    // MARK: - Description Tests
+
+    @Test("configuration has meaningful description")
+    func configurationHasMeaningfulDescription() throws {
+        let config = try ConduitConfiguration.foundationModels(timeout: 60)
+
+        let description = config.description
+        #expect(description.contains("Foundation Models"))
+        #expect(description.contains("60"))
+    }
+
+    // MARK: - HuggingFace Token Validation
+
+    @Test("empty HuggingFace token throws emptyToken")
+    func emptyHuggingFaceTokenThrowsError() throws {
+        #expect(throws: ConduitConfigurationError.emptyToken) {
+            _ = try ConduitConfiguration.huggingFace(
+                token: "",
+                model: .huggingFace("test-model")
+            )
+        }
+    }
+
+    @Test("whitespace-only HuggingFace token throws emptyToken")
+    func whitespaceOnlyHuggingFaceTokenThrowsError() throws {
+        #expect(throws: ConduitConfigurationError.emptyToken) {
+            _ = try ConduitConfiguration.huggingFace(
+                token: "   \n\t",
+                model: .huggingFace("test-model")
+            )
+        }
     }
 }
