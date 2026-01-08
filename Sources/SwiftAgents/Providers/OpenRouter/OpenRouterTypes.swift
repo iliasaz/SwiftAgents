@@ -614,19 +614,19 @@ public struct OpenRouterUsage: Codable, Sendable {
     // MARK: Public
 
     /// The number of tokens in the prompt.
-    public let promptTokens: Int
+    public let promptTokens: Int?
 
     /// The number of tokens in the completion.
-    public let completionTokens: Int
+    public let completionTokens: Int?
 
     /// The total number of tokens used.
-    public let totalTokens: Int
+    public let totalTokens: Int?
 
     /// Creates new usage statistics.
     public init(
-        promptTokens: Int,
-        completionTokens: Int,
-        totalTokens: Int
+        promptTokens: Int?,
+        completionTokens: Int?,
+        totalTokens: Int?
     ) {
         self.promptTokens = promptTokens
         self.completionTokens = completionTokens

@@ -93,7 +93,14 @@ public actor OpenRouterProvider: InferenceProvider {
                 }
 
                 // Parse response
-                let chatResponse = try decoder.decode(OpenRouterResponse.self, from: data)
+                let chatResponse: OpenRouterResponse
+                do {
+                    chatResponse = try decoder.decode(OpenRouterResponse.self, from: data)
+                } catch {
+                    // Log the raw response for debugging
+                    let rawResponse = String(data: data, encoding: .utf8) ?? "Unable to decode response as UTF-8"
+                    throw AgentError.generationFailed(reason: "Failed to decode response: \(error.localizedDescription). Raw response: \(rawResponse.prefix(500))")
+                }
 
                 guard let content = chatResponse.choices.first?.message.content else {
                     throw AgentError.generationFailed(reason: "No content in response")
@@ -212,10 +219,12 @@ public actor OpenRouterProvider: InferenceProvider {
 
                 // Parse usage statistics
                 var usage: InferenceResponse.TokenUsage?
-                if let responseUsage = chatResponse.usage {
+                if let responseUsage = chatResponse.usage,
+                   let promptTokens = responseUsage.promptTokens,
+                   let completionTokens = responseUsage.completionTokens {
                     usage = InferenceResponse.TokenUsage(
-                        inputTokens: responseUsage.promptTokens,
-                        outputTokens: responseUsage.completionTokens
+                        inputTokens: promptTokens,
+                        outputTokens: completionTokens
                     )
                 }
 
