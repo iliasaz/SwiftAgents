@@ -126,6 +126,6 @@ extension AgentError: LocalizedError {
 
 extension AgentError: CustomDebugStringConvertible {
     public var debugDescription: String {
-        "AgentError.\(self)"
+      "AgentError.\(self.errorDescription ?? "Unknown")"
     }
 }
