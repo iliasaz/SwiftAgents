@@ -16,11 +16,11 @@ let package = Package(
     ],
     dependencies: [
         // Swift Syntax for macro implementations
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", "600.0.0"..<"700.0.0"),
         // Swift Logging API
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
         // Conduit - Unified LLM inference layer
-        .package(url: "https://github.com/christopherkarani/Conduit.git", from: "1.0.0")
+        .package(url: "https://github.com/iliasaz/Conduit.git", from: "1.0.0")
     ],
     targets: [
         // MARK: - Macro Implementation (Compiler Plugin)
